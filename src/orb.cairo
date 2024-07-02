@@ -67,7 +67,7 @@ trait IERC20<T> {
 #[starknet::contract]
 mod ERC721 {
     use starknet::{
-        ContractAddress, get_caller_address,  storage_access::StorageBaseAddress,
+        ContractAddress, get_caller_address, storage_access::StorageBaseAddress,
         get_contract_address, get_block_timestamp, contract_address_const
     };
     use core::num::traits::Zero;
@@ -104,16 +104,13 @@ mod ERC721 {
         total_supply: u256,
         // fractioned token bought
         token_owned: u256,
-
         // token Owned last id
-        last_token_id:u256,
-
-
+        last_token_id: u256,
         // total price of the Orb
         price: u256,
         // max time to hold token before resubscription this should be calculated in days assuming 10 days 10 * 24 * 60 * 60
         purchase_period: u256,
-        // cooldown period
+        // cooldown period assuming 7 days 7 *24*60*60
         cooldown: u256,
         // flagging period
         flagging_period: u256,
@@ -122,24 +119,21 @@ mod ERC721 {
         // owners: LegacyMap::<u256, ContractAddress>,
         // mapping address this to the parameters
         parameters_data: LegacyMap::<ContractAddress, Parameters>,
-
         // mapping to monitor usage  
         parameters_monitor: LegacyMap::<u256, MonitorParameters>,
         // fractioned balance of the token holder
         fractioned_balances: LegacyMap::<ContractAddress, u256>,
-
         // fractioned token id
         fractioned_token_id_owner: LegacyMap::<u256, ContractAddress>,
-
         // unit of fractioned token attached to an id
-        fractioned_token_id:LegacyMap::<u256, u256>,
-
+        fractioned_token_id: LegacyMap::<u256, u256>,
         // token owned by individual: deposited token or rewards
         balances: LegacyMap::<ContractAddress, u256>,
         // Subscription time stamp: showing current period of subscrition.
         // mapping of tokenId to block.timestamp
         subscription_time: LegacyMap::<u256, u256>,
-
+        // Monitor last invocation time 
+        last_invocation: LegacyMap::<u256, u256>,
         token_approvals: LegacyMap::<u256, ContractAddress>,
         operator_approvals: LegacyMap::<(ContractAddress, ContractAddress), bool>,
     }
@@ -148,14 +142,14 @@ mod ERC721 {
     struct Parameters {
         usage_level: u256,
         user_satisfaction: u256,
-        subscription_demand:u256,
+        subscription_demand: u256,
     }
     // Struct to monitor usae of the fractioned Orb 
-#[derive(Drop, Serde, starknet::Store)]
-struct MonitorParameters{
-    usage_level: u256,
-    user_satisfaction:u256,
-}
+    #[derive(Drop, Serde, starknet::Store)]
+    struct MonitorParameters {
+        usage_level: u256,
+        user_satisfaction: u256,
+    }
 
     // Event
 
@@ -193,9 +187,7 @@ struct MonitorParameters{
     }
 
     #[constructor]
-    fn constructor(
-        ref self: ContractState, name_: felt252, symbol_: felt252, total_supply_: u256
-    ) {
+    fn constructor(ref self: ContractState, name_: felt252, symbol_: felt252, total_supply_: u256) {
         assert(total_supply_ <= MAX_SUPPLY, 'SUPPLY_EXCEED_MAX');
         assert(total_supply_ >= 1, 'INCREASE_SUPPLY');
         self.name.write(name_);
@@ -225,11 +217,10 @@ struct MonitorParameters{
         }
         fn owner_of(self: @ContractState, token_id_: u256) -> ContractAddress {
             let zero_address = contract_address_const::<0>();
-           
+
             if (token_id_ != token_id_) {
                 zero_address
-            }else{
-
+            } else {
                 self.owner.read()
             }
         }
@@ -273,7 +264,7 @@ struct MonitorParameters{
     fn get_total_supply(self: @ContractState) -> u256 {
         self.total_supply.read()
     }
-    /// @notice Checks the fractioned balance of the caller
+    /// @notice Checks the tokenbalance of the caller on the contract
     #[external(v0)]
     fn token_balance_of(self: @ContractState, owner_: ContractAddress) -> u256 {
         self.balances.read(owner_)
@@ -353,7 +344,10 @@ struct MonitorParameters{
         fractioned_unit_: u256
     ) {
         assert(self.token_owned.read() <= self.total_supply.read(), 'NO_AVAILABLE_TOKEN');
-        assert(fractioned_unit_ + self.token_owned.read() <= self.total_supply.read(), 'OVER_TOKEN_PURCHASED');
+        assert(
+            fractioned_unit_ + self.token_owned.read() <= self.total_supply.read(),
+            'OVER_TOKEN_PURCHASED'
+        );
         // assert(fractioned_unit_ <= token_owned, "OVER_TOKEN_PURCHASED");
         let caller = get_caller_address();
         // let orb_price = self.get_price();
@@ -362,14 +356,16 @@ struct MonitorParameters{
         let user_satisfaction_ = self.parameters_data.read(address_this).user_satisfaction;
         let subscription_demand_ = self.parameters_data.read(address_this).subscription_demand;
 
-        let current_price_ = self.my_fractioned_orb_price(usage_level_, user_satisfaction_, subscription_demand_);
+        let current_price_ = self
+            .my_fractioned_orb_price(usage_level_, user_satisfaction_, subscription_demand_);
         let single_price = current_price_ / self.total_supply.read();
 
         let fractioned_price_ = single_price * fractioned_unit_;
         assert(amount_ >= fractioned_price_, 'NOT_CURRENT_PRICE');
-        let balance_ = IERC20Dispatcher { contract_address:token_address_ }.balance_of(caller);
+        let balance_ = IERC20Dispatcher { contract_address: token_address_ }.balance_of(caller);
         assert(balance_ >= fractioned_price_, 'INSUFFICIENT_BALANCE');
-        IERC20Dispatcher { contract_address:token_address_ }.transfer_from(caller, address_this, amount_);
+        IERC20Dispatcher { contract_address: token_address_ }
+            .transfer_from(caller, address_this, amount_);
 
         self.fractioned_balances.write(caller, fractioned_unit_);
 
@@ -377,47 +373,62 @@ struct MonitorParameters{
         let token_purchased_ = self.token_owned.read() + fractioned_unit_;
         self.token_owned.write(token_purchased_);
         self.balances.write(self.owner.read(), amount_);
-        let current_time:u256 = get_block_timestamp().try_into().unwrap();
+        let current_time: u256 = get_block_timestamp().try_into().unwrap();
         let extended_time = current_time + self.purchase_period.read();
-        
+
         self.fractioned_token_id_owner.write(self.last_token_id.read() + 1, caller);
-        self.fractioned_token_id.write(self.last_token_id.read()+1, fractioned_unit_);
-        self.subscription_time.write(self.last_token_id.read()+1, extended_time);
+        self.fractioned_token_id.write(self.last_token_id.read() + 1, fractioned_unit_);
+        self.subscription_time.write(self.last_token_id.read() + 1, extended_time);
         // increase subsrition demand
         let usage_level = self.parameters_data.read(get_contract_address()).usage_level + 0;
-        let user_satisfaction = self.parameters_data.read(get_contract_address()).user_satisfaction + 0;
-        let subscription_demand = self.parameters_data.read(get_contract_address()).user_satisfaction + 001;
-        
-        let parameters_data_= Parameters{usage_level , user_satisfaction, subscription_demand};
-        self.parameters_data.write(address_this, parameters_data_);
+        let user_satisfaction = self.parameters_data.read(get_contract_address()).user_satisfaction
+            + 0;
+        let subscription_demand = self
+            .parameters_data
+            .read(get_contract_address())
+            .user_satisfaction
+            + 001;
 
+        let parameters_data_ = Parameters { usage_level, user_satisfaction, subscription_demand };
+        self.parameters_data.write(address_this, parameters_data_);
     }
 
     // @notice buy premium when orb is not active
     // @param token_id_: Id of the fractioned token
     #[external(v0)]
-    fn buy_nonactive_orb(ref self: ContractState, token_id_:u256,amount_:u256, token_address_:ContractAddress){
+    fn buy_nonactive_orb(
+        ref self: ContractState, token_id_: u256, amount_: u256, token_address_: ContractAddress
+    ) {
         let caller = get_caller_address();
-        let current_time_:u256 = self.subscription_time.read(token_id_);
-        let half_time_ = current_time_/2;
-        assert(get_block_timestamp().try_into().unwrap() > half_time_, 'IN_ACTIVENESS_NOTDETERMINED_YET');
-        assert(self.parameters_monitor.read(token_id_).usage_level > 0 && self.parameters_monitor.read(token_id_).user_satisfaction > 0, 'ACTIVE');
+        let current_time_: u256 = self.subscription_time.read(token_id_);
+        let half_time_ = current_time_ / 2;
+        assert(
+            get_block_timestamp().try_into().unwrap() > half_time_,
+            'IN_ACTIVENESS_NOTDETERMINED_YET'
+        );
+        assert(
+            self.parameters_monitor.read(token_id_).usage_level > 0
+                && self.parameters_monitor.read(token_id_).user_satisfaction > 0,
+            'ACTIVE'
+        );
 
         // let orb_price = self.get_price();
         let address_this = get_contract_address();
         let usage_level_ = self.parameters_data.read(address_this).usage_level;
         let user_satisfaction_ = self.parameters_data.read(address_this).user_satisfaction;
         let subscription_demand_ = self.parameters_data.read(address_this).subscription_demand;
-        let current_price_ = self.my_fractioned_orb_price(usage_level_, user_satisfaction_, subscription_demand_);
+        let current_price_ = self
+            .my_fractioned_orb_price(usage_level_, user_satisfaction_, subscription_demand_);
         let single_price = current_price_ / self.total_supply.read();
         let unit_owed_by_id = self.fractioned_token_id.read(token_id_);
-        let purchased_price_= single_price * unit_owed_by_id;
+        let purchased_price_ = single_price * unit_owed_by_id;
         assert(amount_ >= purchased_price_, 'INPUT_THE_RIGHT_AMOUNT');
-        let balance_ = IERC20Dispatcher { contract_address:token_address_ }.balance_of(caller);
+        let balance_ = IERC20Dispatcher { contract_address: token_address_ }.balance_of(caller);
         assert(balance_ >= purchased_price_, 'INSUFFICIENT_BALANCE');
-        IERC20Dispatcher { contract_address:token_address_ }.transfer_from(caller, address_this, amount_);
+        IERC20Dispatcher { contract_address: token_address_ }
+            .transfer_from(caller, address_this, amount_);
         self.fractioned_token_id_owner.write(token_id_, caller);
-        let current_time:u256 = get_block_timestamp().try_into().unwrap();
+        let current_time: u256 = get_block_timestamp().try_into().unwrap();
         let extended_time = current_time + self.purchase_period.read();
         let formal_owner = self.fractioned_token_id_owner.read(token_id_);
         let uint_owed = self.fractioned_balances.read(formal_owner);
@@ -426,106 +437,139 @@ struct MonitorParameters{
         self.fractioned_balances.write(caller, uint_owed);
         let usage_level = 0;
         let user_satisfaction = 0;
-        let parameters_monitor_ = MonitorParameters{usage_level, user_satisfaction};
+        let parameters_monitor_ = MonitorParameters { usage_level, user_satisfaction };
         self.parameters_monitor.write(token_id_, parameters_monitor_);
-
-
     }
-    
-    // @external list non active premium
 
+    // @external list non active premium
 
     // @notice deposit fund into the contract
     #[external(v0)]
-    fn deposit(ref self: ContractState, amount_: u256, token_address_:ContractAddress) {
+    fn deposit(ref self: ContractState, amount_: u256, token_address_: ContractAddress) {
         let caller = get_caller_address();
         let address_this = get_contract_address();
-        
 
         assert(self.fractioned_balances.read(caller) >= 1, 'NO_TOKEN_BALANCE');
-        let balance_ = IERC20Dispatcher { contract_address:token_address_ }.balance_of(caller);
+        let balance_ = IERC20Dispatcher { contract_address: token_address_ }.balance_of(caller);
         assert(balance_ >= amount_, 'INSUFFICIENT_BALANCE');
-        IERC20Dispatcher { contract_address:token_address_ }.transfer_from(caller, address_this, amount_);
+        IERC20Dispatcher { contract_address: token_address_ }
+            .transfer_from(caller, address_this, amount_);
         self.balances.write(caller, amount_);
     }
     //@notice withdrawAll your fund from the contract
     #[external(v0)]
-    fn withdraw_all_fund(ref self:ContractState, token_address_:ContractAddress) {
+    fn withdraw_all_fund(ref self: ContractState, token_address_: ContractAddress) {
         let caller = get_caller_address();
         let address_this = get_contract_address();
         let my_balance = self.balances.read(caller);
-        assert(my_balance>0, 'NOT_ENOUGH_BALANCE');
-        assert(IERC20Dispatcher{contract_address:token_address_}.balance_of(address_this) >= my_balance, 'TRY_AGAIN');
-        IERC20Dispatcher{contract_address:token_address_}.transfer_from(address_this, caller, my_balance);
+        assert(my_balance > 0, 'NOT_ENOUGH_BALANCE');
+        assert(
+            IERC20Dispatcher { contract_address: token_address_ }
+                .balance_of(address_this) >= my_balance,
+            'TRY_AGAIN'
+        );
+        IERC20Dispatcher { contract_address: token_address_ }
+            .transfer_from(address_this, caller, my_balance);
         self.balances.write(caller, self.balances.read(caller) - my_balance);
     }
     // @notice Withdraw fund from the contract
     #[external(v0)]
-    fn withdraw_fund(ref self:ContractState, amount_:u256, token_address_:ContractAddress){
+    fn withdraw_fund(ref self: ContractState, amount_: u256, token_address_: ContractAddress) {
         let caller = get_caller_address();
         let address_this = get_contract_address();
         let my_balance = self.balances.read(caller);
-        assert(my_balance>0, 'NOT_ENOUGH_BALANCE');
-        assert(amount_<= my_balance, 'OVER_AMOUNT_INPUT');
-        assert(IERC20Dispatcher{contract_address:token_address_}.balance_of(address_this) >= my_balance, 'TRY_AGAIN');
-        IERC20Dispatcher{contract_address:token_address_}.transfer_from(address_this, caller, amount_);
+        assert(my_balance > 0, 'NOT_ENOUGH_BALANCE');
+        assert(amount_ <= my_balance, 'OVER_AMOUNT_INPUT');
+        assert(
+            IERC20Dispatcher { contract_address: token_address_ }
+                .balance_of(address_this) >= my_balance,
+            'TRY_AGAIN'
+        );
+        IERC20Dispatcher { contract_address: token_address_ }
+            .transfer_from(address_this, caller, amount_);
         self.balances.write(caller, self.balances.read(caller) - amount_);
     }
 
     //@notice relinquish the orb: give up your Orb
     #[external(v0)]
-    fn relinquish(ref self: ContractState, token_id_:u256, ){
+    fn relinquish(ref self: ContractState, token_id_: u256,) {
         let caller = get_caller_address();
         let address_this = get_contract_address();
         // let set_time 
-        let current_time:u256 = get_block_timestamp().try_into().unwrap();
+        let current_time: u256 = get_block_timestamp().try_into().unwrap();
         assert(self.fractioned_token_id_owner.read(token_id_) == caller, 'NOT_OWNER');
         assert(current_time < self.subscription_time.read(token_id_), 'ORB_NOT_ACTIVE');
-        self.fractioned_token_id_owner.write( token_id_, address_this);
-        self.subscription_time.write( token_id_, 0);
+        self.fractioned_token_id_owner.write(token_id_, address_this);
+        self.subscription_time.write(token_id_, 0);
         let usage_level = 0;
         let user_satisfaction = 0;
 
-        let parameters_ = MonitorParameters{usage_level, user_satisfaction};
-        self.parameters_monitor.write(token_id_, parameters_ );
-
-
+        let parameters_ = MonitorParameters { usage_level, user_satisfaction };
+        self.parameters_monitor.write(token_id_, parameters_);
+    }
+    // @notice get the balance of the caller
+    #[external(v0)]
+    fn my_fractioned_balance(self: @ContractState, owner_: ContractAddress) -> u256 {
+        self.fractioned_balances.read(owner_)
     }
 
-    //@notice foreclose
-    fn foreclose(ref self: ContractState, token_id_:u256){
-        let address_this = get_contract_address();
-        let current_time:u256 = get_block_timestamp().try_into().unwrap();
-        assert(current_time > self.subscription_time.read(token_id_), 'ORB_ISACTIVE');
-        self.fractioned_token_id_owner.write( token_id_, address_this);
-        self.subscription_time.write( token_id_, 0);
-        let usage_level = 0;
-        let user_satisfaction = 0;
+    #[external(v0)]
+    fn get_subscription_remaining_time(self: @ContractState, token_id_: u256) -> u256 {
+        self.subscription_time.read(token_id_)
+    }
 
-        let parameters_ = MonitorParameters{usage_level, user_satisfaction};
-        self.parameters_monitor.write(token_id_, parameters_ );
+    #[external(v0)]
+    fn my_last_invocation_time(self: @ContractState, token_id_: u256) -> u256 {
+        self.last_invocation.read(token_id_)
+    }
 
+    #[external(v0)]
+    fn get_invocation_period(self: @ContractState) -> u256 {
+        self.cooldown.read()
     }
 
     //@notice setLast invocation time
     // TOBELOOKEDAT
-    fn  set_last_invocation_time(ref self: ContractState,){
-
+    #[external(v0)]
+    fn set_last_invocation_time(ref self: ContractState, token_id_: u256, owner_: ContractAddress) {
+        assert(self.fractioned_balances.read(owner_) > 0, 'NO_TOKEN');
+        assert(self.fractioned_token_id_owner.read(token_id_) == owner_, 'NOT_OWNER');
+        let current_time: u256 = get_block_timestamp().try_into().unwrap();
+        self.last_invocation.write(token_id_, current_time);
     }
 
-  
+
+    //@notice foreclose
+    #[external(v0)]
+    fn foreclose(ref self: ContractState, token_id_: u256) {
+        let address_this = get_contract_address();
+        let current_time: u256 = get_block_timestamp().try_into().unwrap();
+        assert(current_time > self.subscription_time.read(token_id_), 'ORB_ISACTIVE');
+        self.fractioned_token_id_owner.write(token_id_, address_this);
+        self.subscription_time.write(token_id_, 0);
+        let usage_level = 0;
+        let user_satisfaction = 0;
+
+        let parameters_ = MonitorParameters { usage_level, user_satisfaction };
+        self.parameters_monitor.write(token_id_, parameters_);
+    }
+
+    #[external(v0)]
+    fn get_owner(self: @ContractState, owner_: ContractAddress) -> bool {
+        self.only_owner(owner_)
+    }
+
+    #[external(v0)]
+    fn set_parameters(ref self: ContractState) {}
 
     #[generate_trait]
     impl Private of PrivateTrait {
         fn only_owner(self: @ContractState, owner_: ContractAddress) -> bool {
             if (owner_ != self.owner.read()) {
                 false
-            }
-            else{
-
+            } else {
                 true
             }
-            
         }
 
         // @notice set the total orb Price
@@ -541,36 +585,40 @@ struct MonitorParameters{
 
         // @notice Orb single Price
         fn my_fractioned_orb_price(
-            self: @ContractState, usage_level_: u256, user_satisfaction_: u256, subscription_demand_:u256
+            self: @ContractState,
+            usage_level_: u256,
+            user_satisfaction_: u256,
+            subscription_demand_: u256
         ) -> u256 {
             let orb_price = self.get_price();
-            let premium_price = self.calculate_premium(orb_price, usage_level_, subscription_demand_, user_satisfaction_);
+            let premium_price = self
+                .calculate_premium(
+                    orb_price, usage_level_, subscription_demand_, user_satisfaction_
+                );
             let fractioned_price = premium_price / self.total_supply.read();
             fractioned_price
         }
         // @notice determine premium price
         fn calculate_premium(
-            self: @ContractState, price_: u256, usage_level_: u256, 
+            self: @ContractState,
+            price_: u256,
+            usage_level_: u256,
             subscription_demand_: u256,
             user_satisfaction_: u256
         ) -> u256 {
-            if (usage_level_ == 0  && subscription_demand_ == 0
-            && user_satisfaction_ == 0) {
+            if (usage_level_ == 0 && subscription_demand_ == 0 && user_satisfaction_ == 0) {
                 self.price.read()
-            }
-            else{
-
+            } else {
                 let newPrice: u256 = (price_
                     * (10
                         + ((WEIGHT_USAGE_LEVEL * usage_level_) / 10)
-                         + ((WEIGHT_SUBSCRIPTION_DEMAND * subscription_demand_) / 10)
+                        + ((WEIGHT_SUBSCRIPTION_DEMAND * subscription_demand_) / 10)
                         + ((WEIGHT_USER_SATISFACTION * user_satisfaction_) / 10)))
                     / 10;
                 newPrice
             }
         }
-
-        // @notice show non active premium
-        // fn get_non_active_orb()->
+    // @notice show non active premium
+    // fn get_non_active_orb()->
     }
 }
