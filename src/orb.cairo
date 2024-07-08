@@ -63,6 +63,15 @@ trait IERC20<T> {
 
     fn approve(ref self: T, spender: ContractAddress, amount: u256) -> bool;
 }
+#[starknet::interface]
+trait OrbInvocation<TContractState> {
+    fn prevent_violation(
+        self: @TContractState, contract_address: ContractAddress, owner_: ContractAddress
+    ) -> bool;
+    fn prevent_violation_owner(
+        self: @TContractState, contract_address: ContractAddress, owner_: ContractAddress
+    ) -> bool;
+}
 
 #[starknet::contract]
 mod ERC721 {
@@ -71,7 +80,10 @@ mod ERC721 {
         get_contract_address, get_block_timestamp, contract_address_const
     };
     use core::num::traits::Zero;
-    use super::{IERC20Dispatcher, IERC20DispatcherTrait};
+    use super::{
+        IERC20Dispatcher, IERC20DispatcherTrait, OrbInvocationDispatcher,
+        OrbInvocationDispatcherTrait
+    };
     // Max_Supply of NFT to prevent over Fractionalization
     const MAX_SUPPLY: u256 = 5;
     // weights 
@@ -81,6 +93,12 @@ mod ERC721 {
     const WEIGHT_SUBSCRIPTION_DEMAND: u256 = 3;
     //Equivalent to 0.3
     const WEIGHT_USER_SATISFACTION: u256 = 3;
+    //Equivalent to 0.4
+    const WEIGHT_USAGE_LEVEL2: i128 = 4;
+    //Equivalent to 0.3
+    const WEIGHT_SUBSCRIPTION_DEMAND2: i128 = 3;
+    //Equivalent to 0.3
+    const WEIGHT_USER_SATISFACTION2: i128 = 3;
 
     // Maximum cooldown duration is 10 years 
     const COOLDOWN_MAXIMUM_DURATION: u256 = 3650;
@@ -538,6 +556,64 @@ mod ERC721 {
         self.last_invocation.write(token_id_, current_time);
     }
 
+    // @notice set premimum data by the user
+    fn set_premium_data_by_user(
+        ref self: ContractState,
+        contract_address: ContractAddress,
+        usage_level_: u256,
+        user_satisfaction_: u256,
+        subscription_demand_: u256,
+        owner_: ContractAddress,
+        token_id_: u256
+    ) {
+        let address_this = get_contract_address();
+        assert(
+            OrbInvocationDispatcher { contract_address }
+                .prevent_violation(address_this, owner_) == true,
+            'NOT_ALLOWED'
+        );
+        let usage_level = usage_level_ + self.parameters_data.read(address_this).usage_level;
+        let user_satisfaction = user_satisfaction_
+            + self.parameters_data.read(address_this).user_satisfaction;
+        let subscription_demand = subscription_demand_
+            + self.parameters_data.read(address_this).subscription_demand;
+        let parameters_ = Parameters { usage_level, user_satisfaction, subscription_demand };
+
+        let usage_level1 = usage_level_ + self.parameters_monitor.read(token_id_).usage_level;
+        let user_satisfaction1 = user_satisfaction_
+            + self.parameters_monitor.read(token_id_).usage_level;
+        let monitor_parameters = MonitorParameters {
+            usage_level: usage_level1, user_satisfaction: user_satisfaction1
+        };
+
+        self.parameters_data.write(address_this, parameters_);
+        self.parameters_monitor.write(token_id_, monitor_parameters);
+    }
+
+    // @notice set premium data by owner
+    fn set_premium_data_by_owner(
+        ref self: ContractState,
+        owner_: ContractAddress,
+        contract_address: ContractAddress,
+        usage_level_: u256,
+        user_satisfaction_: u256,
+        subscription_demand_: u256
+    ) {
+        let address_this = get_contract_address();
+        assert(
+            OrbInvocationDispatcher { contract_address }
+                .prevent_violation_owner(address_this, owner_) == true,
+            'NOT_OWNER'
+        );
+        let usage_level = usage_level_ + self.parameters_data.read(address_this).usage_level;
+        let user_satisfaction = user_satisfaction_
+            + self.parameters_data.read(address_this).user_satisfaction;
+        let subscription_demand = subscription_demand_
+            + self.parameters_data.read(address_this).subscription_demand;
+        let parameters_ = Parameters { usage_level, user_satisfaction, subscription_demand };
+        self.parameters_data.write(address_this, parameters_);
+    }
+
 
     //@notice foreclose
     #[external(v0)]
@@ -560,7 +636,9 @@ mod ERC721 {
     }
 
     #[external(v0)]
-    fn set_parameters(ref self: ContractState) {}
+    fn get_flagging_period(self: @ContractState) -> u256 {
+        self.flagging_period.read()
+    }
 
     #[generate_trait]
     impl Private of PrivateTrait {
@@ -606,10 +684,11 @@ mod ERC721 {
             subscription_demand_: u256,
             user_satisfaction_: u256
         ) -> u256 {
+            // let my_satisfaction:u256 = user_satisfaction_.into().unwrap();
             if (usage_level_ == 0 && subscription_demand_ == 0 && user_satisfaction_ == 0) {
                 self.price.read()
             } else {
-                let newPrice: u256 = (price_
+                let newPrice = (price_
                     * (10
                         + ((WEIGHT_USAGE_LEVEL * usage_level_) / 10)
                         + ((WEIGHT_SUBSCRIPTION_DEMAND * subscription_demand_) / 10)
