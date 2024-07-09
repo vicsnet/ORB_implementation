@@ -93,12 +93,6 @@ mod ERC721 {
     const WEIGHT_SUBSCRIPTION_DEMAND: u256 = 3;
     //Equivalent to 0.3
     const WEIGHT_USER_SATISFACTION: u256 = 3;
-    //Equivalent to 0.4
-    const WEIGHT_USAGE_LEVEL2: i128 = 4;
-    //Equivalent to 0.3
-    const WEIGHT_SUBSCRIPTION_DEMAND2: i128 = 3;
-    //Equivalent to 0.3
-    const WEIGHT_USER_SATISFACTION2: i128 = 3;
 
     // Maximum cooldown duration is 10 years 
     const COOLDOWN_MAXIMUM_DURATION: u256 = 3650;
@@ -205,12 +199,14 @@ mod ERC721 {
     }
 
     #[constructor]
-    fn constructor(ref self: ContractState, name_: felt252, symbol_: felt252, total_supply_: u256) {
+    fn constructor(ref self: ContractState, name_: felt252, symbol_: felt252, total_supply_: u256, token_uri_:felt252, owner_:ContractAddress) {
         assert(total_supply_ <= MAX_SUPPLY, 'SUPPLY_EXCEED_MAX');
         assert(total_supply_ >= 1, 'INCREASE_SUPPLY');
         self.name.write(name_);
         self.symbol.write(symbol_);
         self.total_supply.write(total_supply_);
+        self.token_URI.write(token_uri_);
+        self.owner.write(owner_);
     }
 
     #[abi(embed_v0)]
