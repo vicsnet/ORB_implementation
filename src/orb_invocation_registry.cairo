@@ -61,6 +61,7 @@ mod ORB_Invocation_Registry {
 
     #[derive(Drop, Serde, starknet::Store)]
     struct InvocationData {
+        invoker: ContractAddress,
         content_hash: ByteArray,
         time_stamp: u256
     }
@@ -130,7 +131,7 @@ mod ORB_Invocation_Registry {
 
         let content_hash = content_hash_;
         let time_stamp = current_time;
-        let invocation_data_ = InvocationData { content_hash, time_stamp };
+        let invocation_data_ = InvocationData { invoker: caller, content_hash, time_stamp };
         self.invocations.write((contract_address, id), invocation_data_);
         IORBDispatcher { contract_address }.set_last_invocation_time(token_id_, caller);
         let usage_level_ = 001;
@@ -230,6 +231,16 @@ mod ORB_Invocation_Registry {
             .set_premium_data_by_user(
                 address_this, usage_level_, user_satisfaction_, 0, caller, token_id_
             );
+    }
+
+    // get the details of the invocation
+
+    #[external(v0)]
+    fn get_invocations(
+        self: @ContractState, orb_address: ContractAddress, invocation_id_: u256
+    ) -> (ByteArray, ContractAddress) {
+        let invocation_data = self.invocations.read((orb_address, invocation_id_));
+        (invocation_data.content_hash, invocation_data.invoker)
     }
 
 

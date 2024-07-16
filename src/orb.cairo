@@ -146,6 +146,8 @@ mod ERC721 {
         subscription_time: LegacyMap::<u256, u256>,
         // Monitor last invocation time 
         last_invocation: LegacyMap::<u256, u256>,
+        //Address of the `OrbPond` that deployed this Orb
+        pond: ContractAddress,
         token_approvals: LegacyMap::<u256, ContractAddress>,
         operator_approvals: LegacyMap::<(ContractAddress, ContractAddress), bool>,
     }
@@ -199,7 +201,14 @@ mod ERC721 {
     }
 
     #[constructor]
-    fn constructor(ref self: ContractState, name_: felt252, symbol_: felt252, total_supply_: u256, token_uri_:felt252, owner_:ContractAddress) {
+    fn constructor(
+        ref self: ContractState,
+        name_: felt252,
+        symbol_: felt252,
+        total_supply_: u256,
+        token_uri_: felt252,
+        owner_: ContractAddress
+    ) {
         assert(total_supply_ <= MAX_SUPPLY, 'SUPPLY_EXCEED_MAX');
         assert(total_supply_ >= 1, 'INCREASE_SUPPLY');
         self.name.write(name_);
@@ -207,6 +216,7 @@ mod ERC721 {
         self.total_supply.write(total_supply_);
         self.token_URI.write(token_uri_);
         self.owner.write(owner_);
+        self.pond.write(get_caller_address());
     }
 
     #[abi(embed_v0)]
@@ -634,6 +644,16 @@ mod ERC721 {
     #[external(v0)]
     fn get_flagging_period(self: @ContractState) -> u256 {
         self.flagging_period.read()
+    }
+
+    #[external(v0)]
+    fn get_pond_address(self: @ContractState) -> ContractAddress {
+        self.pond.read()
+    }
+
+    #[external(v0)]
+    fn main_keeper(self: @ContractState)->ContractAddress{
+        self.owner.read()
     }
 
     #[generate_trait]
