@@ -1,7 +1,7 @@
 #[starknet::contract]
 mod ORB_pond {
     use core::starknet::event::EventEmitter;
-use starknet::{
+    use starknet::{
         ContractAddress, ClassHash, SyscallResultTrait, syscalls::deploy_syscall, get_caller_address
     };
 
@@ -28,32 +28,34 @@ use starknet::{
     #[event]
     #[derive(Drop, starknet::Event)]
     enum Event {
-        OrbCreated:OrbCreated,
-        VersionRegistration:VersionRegistration,
-        OrbInitialVersionUpdate:OrbInitialVersionUpdate
+        OrbCreated: OrbCreated,
+        VersionRegistration: VersionRegistration,
+        OrbInitialVersionUpdate: OrbInitialVersionUpdate
     }
 
     #[derive(Drop, starknet::Event)]
-    struct OrbCreated{
-        contract_address:ContractAddress
+    struct OrbCreated {
+        #[key]
+        contract_address: ContractAddress
     }
     #[derive(Drop, starknet::Event)]
-    struct VersionRegistration{
-        version:u256,
-        class_hash:ClassHash
+    struct VersionRegistration {
+        #[key]
+        version: u256,
+        class_hash: ClassHash
     }
     #[derive(Drop, starknet::Event)]
-    struct OrbInitialVersionUpdate{
-        previous_version:u256,
-        orb_initial_version:u256
+    struct OrbInitialVersionUpdate {
+        #[key]
+        previous_version: u256,
+        orb_initial_version: u256
     }
     /// @notice Contract Initalizes, setting owner and registry 
     /// @param registry_ The adddress of the Orb Invocation Registry
-#[constructor]
-    fn constructor(ref self:ContractState, registry_:ContractAddress){
+    #[constructor]
+    fn constructor(ref self: ContractState, registry_: ContractAddress) {
         self.owner.write(get_caller_address());
         self.registry.write(registry_)
-
     }
     /// @notice create a new Orb
     /// @dev Emits 'OrbCreated' 
@@ -83,9 +85,7 @@ use starknet::{
 
         self.orbs.write(self.orb_count.read(), deployed_address);
         self.orb_count.write(self.orb_count.read() + 1);
-        self.emit(OrbCreated{
-            contract_address:deployed_address
-        });
+        self.emit(OrbCreated { contract_address: deployed_address });
 
         deployed_address
     }
@@ -98,10 +98,7 @@ use starknet::{
         assert(version_ > self.latest_version.read(), 'INVALID_VERSION');
         self.latest_version.write(version_);
         self.ORBHash.write(orb_class_hash_);
-        self.emit(VersionRegistration{
-            version:version_,
-            class_hash:orb_class_hash_
-        });
+        self.emit(VersionRegistration { version: version_, class_hash: orb_class_hash_ });
     }
 
     /// @notice Returns the version of the Orb Pond.
@@ -119,10 +116,12 @@ use starknet::{
         assert(orb_initial_version_ < self.latest_version.read(), 'INVALID_VERSION');
         let previous_version_ = self.orb_initial_version.read();
         self.orb_initial_version.write(previous_version_);
-        self.emit(OrbInitialVersionUpdate{
-            previous_version:previous_version_,
-            orb_initial_version:orb_initial_version_
-        });
+        self
+            .emit(
+                OrbInitialVersionUpdate {
+                    previous_version: previous_version_, orb_initial_version: orb_initial_version_
+                }
+            );
     }
 
     /// @notice  Returns registry address
