@@ -1,6 +1,7 @@
 #[starknet::contract]
 mod ORB_pond {
-    use starknet::{
+    use core::starknet::event::EventEmitter;
+use starknet::{
         ContractAddress, ClassHash, SyscallResultTrait, syscalls::deploy_syscall, get_caller_address
     };
 
@@ -13,20 +14,53 @@ mod ORB_pond {
         owner: ContractAddress,
         // the mapping of Orb ids to Orbs.
         orbs: LegacyMap::<u256, ContractAddress>,
+        /// The number of Orb  created so far
         orb_count: u256,
+        /// The address of the Orb Invocation Registry, used to register Orb invocations and responses
         registry: ContractAddress,
+        /// The highest version number so far. Could be used for new Orb Creation
         latest_version: u256,
+        /// New Orb version
         orb_initial_version: u256,
     }
 
 
     #[event]
     #[derive(Drop, starknet::Event)]
-    enum Event {}
+    enum Event {
+        OrbCreated:OrbCreated,
+        VersionRegistration:VersionRegistration,
+        OrbInitialVersionUpdate:OrbInitialVersionUpdate
+    }
 
-    // @notice create a new orb
-    // payees
-    // shares
+    #[derive(Drop, starknet::Event)]
+    struct OrbCreated{
+        contract_address:ContractAddress
+    }
+    #[derive(Drop, starknet::Event)]
+    struct VersionRegistration{
+        version:u256,
+        class_hash:ClassHash
+    }
+    #[derive(Drop, starknet::Event)]
+    struct OrbInitialVersionUpdate{
+        previous_version:u256,
+        orb_initial_version:u256
+    }
+    /// @notice Contract Initalizes, setting owner and registry 
+    /// @param registry_ The adddress of the Orb Invocation Registry
+#[constructor]
+    fn constructor(ref self:ContractState, registry_:ContractAddress){
+        self.owner.write(get_caller_address());
+        self.registry.write(registry_)
+
+    }
+    /// @notice create a new Orb
+    /// @dev Emits 'OrbCreated' 
+    /// @param name_ Name of the Orb used for display Purposs
+    /// @param symbol_ Symbol of the Orb, used for display Purpose
+    /// @param token_uri_ Initial token_uri_ of the Orb, used as part of ERC721
+    /// @param total_supply_ Fractionalized total of the OrbCreated   
     #[external(v0)]
     fn create_orb(
         ref self: ContractState,
@@ -49,32 +83,49 @@ mod ORB_pond {
 
         self.orbs.write(self.orb_count.read(), deployed_address);
         self.orb_count.write(self.orb_count.read() + 1);
+        self.emit(OrbCreated{
+            contract_address:deployed_address
+        });
 
         deployed_address
     }
-    // register orb version
+    /// @notice Register a new version of the Orb Implementation Contract
+    /// @dev Emits 'VersionRegistration'
+    /// @param  version_ Version number of the new implementation contract
+    /// @param orb_class_hash_ Implementation of the new Orb
     fn register_version(ref self: ContractState, version_: u256, orb_class_hash_: ClassHash) {
         assert(self.owner.read() == get_caller_address(), 'NOT_OWNER');
         assert(version_ > self.latest_version.read(), 'INVALID_VERSION');
         self.latest_version.write(version_);
-        self.ORBHash.write(orb_class_hash_)
+        self.ORBHash.write(orb_class_hash_);
+        self.emit(VersionRegistration{
+            version:version_,
+            class_hash:orb_class_hash_
+        });
     }
 
-    // version
+    /// @notice Returns the version of the Orb Pond.
     #[external(v0)]
     fn version(self: @ContractState) -> u256 {
         VERSION
     }
 
-    // set orb initial version
+    /// @notice Sets the registered Orb Implementation version and class hash to be used for the Orb
+    /// @dev Emits 'OrbInitialVersionUpdate'
+    /// @param orb_initial_version_ Registered Orb implementation version number to be used for new Orbs
     #[external(v0)]
     fn set_orb_initial_version(ref self: ContractState, orb_initial_version_: u256) {
         assert(self.owner.read() == get_caller_address(), 'NOT_OWNER');
         assert(orb_initial_version_ < self.latest_version.read(), 'INVALID_VERSION');
         let previous_version_ = self.orb_initial_version.read();
         self.orb_initial_version.write(previous_version_);
+        self.emit(OrbInitialVersionUpdate{
+            previous_version:previous_version_,
+            orb_initial_version:orb_initial_version_
+        });
     }
 
+    /// @notice  Returns registry address
     #[external(v0)]
     fn get_registry(self: @ContractState) -> ContractAddress {
         self.registry.read()
