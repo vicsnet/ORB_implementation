@@ -21,7 +21,7 @@ trait ORBPond<TContractState> {
 #[starknet::interface]
 trait ORB<TContractState> {
     fn get_pond_address(self: @TContractState) -> ContractAddress;
-    fn main_keeper(self: @TContractState)->ContractAddress;
+    fn main_keeper(self: @TContractState) -> ContractAddress;
 }
 
 #[starknet::interface]
@@ -65,9 +65,8 @@ mod ORBInvocationTipJar {
         platform_funds: u256,
         // Orb Land Revenue fee numerator
         platform_fee: u256,
-
         // Orbland Revenue Address
-        platform_address:ContractAddress,
+        platform_address: ContractAddress,
     }
 
     #[derive(Drop, Hash)]
@@ -180,24 +179,26 @@ mod ORBInvocationTipJar {
 
                 self.withdraw_tip_(content_hash, get_caller_address(), *orb_address, token_address);
 
-                i = i+1;
+                i = i + 1;
             };
     }
 
     #[external(v0)]
-    fn withdraw_platform_funds(ref self: ContractState, token_address:ContractAddress) {
-        let platform_fund_ =self.platform_funds.read();
+    fn withdraw_platform_funds(ref self: ContractState, token_address: ContractAddress) {
+        let platform_fund_ = self.platform_funds.read();
         assert(platform_fund_ > 0, 'NO_AVAILABLE_FUND');
-        IERC20Dispatcher { contract_address: token_address }.transfer(self.platform_address.read(), platform_fund_);
-
+        IERC20Dispatcher { contract_address: token_address }
+            .transfer(self.platform_address.read(), platform_fund_);
     }
 
     #[external(v0)]
-    fn set_minimum_tip_value(ref self: ContractState, orb_address:ContractAddress, minimum_tip_value:u256) {
-        let main_keeper_ = ORBDispatcher{contract_address:orb_address}.main_keeper();
+    fn set_minimum_tip_value(
+        ref self: ContractState, orb_address: ContractAddress, minimum_tip_value: u256
+    ) {
+        let main_keeper_ = ORBDispatcher { contract_address: orb_address }.main_keeper();
         assert(main_keeper_ == get_caller_address(), 'NOT_MAIN_KEEPER');
         let previous_tip = self.minimum_tips.read(orb_address);
-        self.minimum_tips.write(orb_address, minimum_tip_value );
+        self.minimum_tips.write(orb_address, minimum_tip_value);
     }
 
     #[generate_trait]

@@ -16,7 +16,6 @@ trait IERC_721<TContractState> {
     fn is_approved_for_all(
         self: @TContractState, owner_: ContractAddress, operator: ContractAddress
     ) -> bool;
-    fn set_token_uri(ref self: TContractState, new_token_uri: felt252);
 }
 
 #[starknet::interface]
@@ -75,6 +74,7 @@ trait OrbInvocation<TContractState> {
 
 #[starknet::contract]
 mod ERC721 {
+    use core::starknet::event::EventEmitter;
     use starknet::{
         ContractAddress, get_caller_address, storage_access::StorageBaseAddress,
         get_contract_address, get_block_timestamp, contract_address_const
@@ -107,7 +107,7 @@ mod ERC721 {
         token_id: u256,
         // Honored Until: time stamp until which the Orb Oath is honored for the keeper
         honored_until: u256,
-        // List the Orb
+        // List the Orb: Determine if ORb fraction can be purchased
         orb_status: bool,
         // Response Period: time period in which the keeper promises to repond to an invocation.
         // Penalty: premium price will reduce if not fufiled
@@ -116,7 +116,7 @@ mod ERC721 {
         total_supply: u256,
         // fractioned token bought
         token_owned: u256,
-        // token Owned last id
+        // Fractioned token Owned last id
         last_token_id: u256,
         // total price of the Orb
         price: u256,
@@ -173,6 +173,17 @@ mod ERC721 {
         transfer: Transfer,
         approval: Approval,
         approval_for_all: Approval_for_all,
+        OathSwearing: OathSwearing,
+        HonoredUntilUpdate: HonoredUntilUpdate,
+        CooldownUpdate: CooldownUpdate,
+        CleartextMaximumLengthUpdate: CleartextMaximumLengthUpdate,
+        BuyOrb: BuyOrb,
+        NonActivePurchase: NonActivePurchase,
+        TokenDeposit: TokenDeposit,
+        WithdrawFund: WithdrawFund,
+        OrbReliquish: OrbReliquish,
+        LastInvocation: LastInvocation,
+        ForeClosure: ForeClosure
     }
 
     #[derive(Drop, starknet::Event)]
@@ -200,6 +211,87 @@ mod ERC721 {
         approved: bool
     }
 
+    #[derive(Drop, starknet::Event)]
+    struct OathSwearing {
+        #[key]
+        oath_hash: ByteArray,
+        honored_until: u256,
+        response_period: u256
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct HonoredUntilUpdate {
+        #[key]
+        previous_honored_until: u256,
+        new_honored_until: u256,
+    }
+    #[derive(Drop, starknet::Event)]
+    struct CooldownUpdate {
+        #[key]
+        previous_cooldown: u256,
+        new_cooldown: u256,
+        previous_flagging_period: u256,
+        new_flagging_period: u256,
+    }
+    #[derive(Drop, starknet::Event)]
+    struct CleartextMaximumLengthUpdate {
+        #[key]
+        previous_cleartext_maximum_length: u256,
+        new_leartext_maximum_length: u256,
+    }
+    #[derive(Drop, starknet::Event)]
+    struct BuyOrb {
+        #[key]
+        buyer_address: ContractAddress,
+        amount_: u256,
+        fractioned_unit_: u256,
+        token_id: u256
+    }
+    #[derive(Drop, starknet::Event)]
+    struct NonActivePurchase {
+        #[key]
+        new_owner: ContractAddress,
+        previous_owner: ContractAddress,
+        amount_: u256,
+        token_id: u256
+    }
+    #[derive(Drop, starknet::Event)]
+    struct TokenDeposit {
+        #[key]
+        owner: ContractAddress,
+        amount: u256
+    }
+    #[derive(Drop, starknet::Event)]
+    struct WithdrawFund {
+        #[key]
+        amount: u256,
+        owner: ContractAddress
+    }
+    #[derive(Drop, starknet::Event)]
+    struct OrbReliquish {
+        #[key]
+        orb_owner: ContractAddress,
+        token_id: u256
+    }
+    #[derive(Drop, starknet::Event)]
+    struct LastInvocation {
+        #[key]
+        token_id: u256,
+        invocation_time: u256
+    }
+    #[derive(Drop, starknet::Event)]
+    struct ForeClosure {
+        #[key]
+        token_id: u256
+    }
+    /// @dev when deployed Contract mint the main token to the deployer
+    /// This token represent the major Orb
+    /// The Fractioned unit of the main token is transfered to the contract addess
+    /// owner is been set to the deployer of the contract tx.origin
+    ///  @param name_ Orb name used in ERC721 metadata
+    ///  @param symbol_ Orb symbol used in ERC721 metadata
+    ///  @param total_supply_ Orb fractioned total number
+    ///  @param token_uri_ Initial value for tokenURI JSONs
     #[constructor]
     fn constructor(
         ref self: ContractState,
@@ -221,13 +313,15 @@ mod ERC721 {
 
     #[abi(embed_v0)]
     impl ERC721_metadata of super::IERC721_metadata<ContractState> {
+        /// @dev returns Orb name used in ERC721 metadata
         fn name(self: @ContractState) -> felt252 {
             self.name.read()
         }
+        /// @dev returns Orb symbol used in ERC721 metadata
         fn symbol(self: @ContractState) -> felt252 {
             self.symbol.read()
         }
-
+        /// @dev returns tokenURI JSONs
         fn token_uri(self: @ContractState) -> felt252 {
             self.token_URI.read()
         }
@@ -235,72 +329,84 @@ mod ERC721 {
 
     #[abi(embed_v0)]
     impl ERC721 of super::IERC_721<ContractState> {
+        /// @notice this function Returns 0 for non main keeper address i.e the address  that deployed the contract
+        /// @param owner_ Address to check owner for
         fn balance_of(self: @ContractState, owner_: ContractAddress) -> u256 {
-            // let caller = get_caller_address();
-            1
-        }
-        fn owner_of(self: @ContractState, token_id_: u256) -> ContractAddress {
-            let zero_address = contract_address_const::<0>();
-
-            if (token_id_ != token_id_) {
-                zero_address
+            if (owner_ != self.owner.read()) {
+                0
             } else {
-                self.owner.read()
+                1
             }
         }
+
+        /// @notice  returns Address of the token owner
+        /// @param token_id_ Id to check owner for
+        fn owner_of(self: @ContractState, token_id_: u256) -> ContractAddress {
+            self.fractioned_token_id_owner.read(token_id_)
+        }
+        /// @notice this function is not supported
         fn safe_transfer_from(
             ref self: ContractState, from: ContractAddress, to: ContractAddress, token_id: u256
         ) {
-            print!("NOT_SUPPORTED");
+            assert(from.is_zero(), 'NOT_SUPPORTED');
+            assert(!from.is_zero(), 'NOT_SUPPORTED');
         }
+        /// @notice this function is not supported
         fn transfer_from(
             ref self: ContractState, from: ContractAddress, to: ContractAddress, token_id: u256
         ) {
-            print!("NOT_SUPPORTED");
+            assert(from.is_zero(), 'NOT_SUPPORTED');
+            assert(!from.is_zero(), 'NOT_SUPPORTED');
         }
+        /// @notice function is not supported
         fn approve(ref self: ContractState, approved: ContractAddress, token_id: u256) {
-            print!("NOT_SUPPORTED");
+            assert(approved.is_zero(), 'NOT_SUPPORTED');
+            assert(!approved.is_zero(), 'NOT_SUPPORTED');
         }
+        /// @notice function is not supported
         fn set_approval_for_all(
             ref self: ContractState, operator: ContractAddress, approved: bool
         ) {
-            print!("NOT_SUPPORTED");
+            assert(operator.is_zero(), 'NOT_SUPPORTED');
+            assert(!operator.is_zero(), 'NOT_SUPPORTED');
         }
+        /// @notice function is not supported
         fn get_apporved(self: @ContractState, token_id: u256) -> ContractAddress {
-            print!("NOT_SUPPORTED");
+            assert(token_id == 0, 'NOT_SUPPORTED');
+            assert(token_id != 0, 'NOT_SUPPORTED');
             get_contract_address()
         }
+        ///  @notice function is not supported
         fn is_approved_for_all(
             self: @ContractState, owner_: ContractAddress, operator: ContractAddress
         ) -> bool {
-            print!("NOT_SUPPORTED");
+            assert(operator.is_zero(), 'NOT_SUPPORTED');
+            assert(!operator.is_zero(), 'NOT_SUPPORTED');
             false
         }
-        fn set_token_uri(ref self: ContractState, new_token_uri: felt252) {
-            let caller = get_caller_address();
-            let is_owner = self.only_owner(caller);
-            assert(is_owner == true, 'NOT_ORB_CREATOR');
-            self.token_URI.write(new_token_uri);
-        }
     }
-    // @notice get the total fractioned supply 
+    /// @notice get the total fractioned supply
+    /// @return Returns total supply of the Fractioned Orb 
     #[external(v0)]
     fn get_total_supply(self: @ContractState) -> u256 {
         self.total_supply.read()
     }
     /// @notice Checks the tokenbalance of the caller on the contract
+    /// @param owner_ Address to check the balance for
+    /// @return the balance of the Owner_ Address
     #[external(v0)]
     fn token_balance_of(self: @ContractState, owner_: ContractAddress) -> u256 {
         self.balances.read(owner_)
     }
-    // @notice set the total Orb price
+    /// @notice set the total Orb price
+    /// @param price_ the Price of the total fractioned Orb
     #[external(v0)]
     fn set_price(ref self: ContractState, price_: u256) {
         let caller = get_caller_address();
         self.only_owner(caller);
         self.set_price_(price_);
     }
-    // @notice activate the Orb
+    /// @notice activate the Orb
     #[external(v0)]
     fn start_orb(ref self: ContractState) {
         let caller = get_caller_address();
@@ -309,7 +415,11 @@ mod ERC721 {
         self.orb_status.write(true);
     }
 
-    // @notice swear Orb Oath
+    /// @notice Allows Swearing of the Orb Oath and set a new `honored` date. function can only be called by the Orb creator
+    /// @dev Emit `Oath Swearing`
+    /// @param oath_hash Hash
+    /// @param new_honored_until Date untill which the Orb creator will honor the Oath of the fractioned Orb keeper
+    /// @param new_response_period Duration within which the Orb creator promises to respond to invocation
     #[external(v0)]
     fn swear_oath(
         ref self: ContractState,
@@ -324,11 +434,21 @@ mod ERC721 {
         assert(new_response_period > 0, 'INCREASE_RESPONSE_PERIOD');
         self.honored_until.write(new_honored_until);
         self.response_period.write(new_response_period);
-    // emmit oat_hash as event 
-
+        // emmit oat_hash as event 
+        self
+            .emit(
+                OathSwearing {
+                    oath_hash,
+                    honored_until: new_honored_until,
+                    response_period: new_response_period
+                }
+            );
     }
 
-    // Allows the Orb creator to extend the honoredUntil date
+    /// @notice Allows the Orb creator to extend the honoredUntil date
+    /// @dev Emits `HonoredUntilUpdate`
+    /// @param new_honored_until Date until which the Orb creator will honor the Oath for the Orb keeper. must be greater than the current
+
     #[external(v0)]
     fn extend_honored_until(ref self: ContractState, new_honored_until: u256) {
         let caller = get_caller_address();
@@ -336,8 +456,18 @@ mod ERC721 {
         assert(is_owner == true, 'NOT_ORB_CREATOR');
         assert(new_honored_until > self.honored_until.read(), 'HONORED_DATE_DISAPPROVED');
         self.honored_until.write(new_honored_until);
+        self
+            .emit(
+                HonoredUntilUpdate {
+                    previous_honored_until: self.honored_until.read(),
+                    new_honored_until: new_honored_until,
+                }
+            );
     }
-    // @notice Allows the Orb creator to set the new cooldown duration period
+    /// @notice Allows the Orb creator to set the new cooldown duration period
+    /// @dev Emits `CooldownUpdate`
+    /// @param new_cooldown New cooldown in seconds. cannot be longer than `COOLDOWN_MAXIMUM_DURATION`
+    /// @param new_flagging_period New flagging period in seconds
     #[external(v0)]
     fn set_cool_down(ref self: ContractState, new_cooldown: u256, new_flagging_period: u256) {
         let caller = get_caller_address();
@@ -346,9 +476,20 @@ mod ERC721 {
         assert(new_cooldown < COOLDOWN_MAXIMUM_DURATION, 'COOLDOWN_EXCEED_DURATION');
         self.cooldown.write(new_cooldown);
         self.flagging_period.write(new_flagging_period);
+        self
+            .emit(
+                CooldownUpdate {
+                    previous_cooldown: self.cooldown.read(),
+                    new_cooldown: new_cooldown,
+                    previous_flagging_period: self.flagging_period.read(),
+                    new_flagging_period: new_flagging_period,
+                }
+            );
     }
 
-    // @notice Allows the Orb creator to set the new cleartext maximum length.
+    /// @notice Allows the Orb creator to set the new cleartext maximum length.
+    /// @dev Emit `CleartextMaximumLengthUPdate`
+    /// @param new_clear_text new clear text maximum length. Cannot be 0.
     #[external(v0)]
     fn set_clear_text_maximum_length(ref self: ContractState, new_clear_text: u256) {
         let caller = get_caller_address();
@@ -356,9 +497,21 @@ mod ERC721 {
         assert(is_owner == true, 'NOT_ORB_CREATOR');
         assert(new_clear_text > 0, 'INVALID_TEXT_MAXIMUM_LENGTH');
         self.clear_text_maximum_length.write(new_clear_text);
+        self
+            .emit(
+                CleartextMaximumLengthUpdate {
+                    previous_cleartext_maximum_length: self.clear_text_maximum_length.read(),
+                    new_leartext_maximum_length: new_clear_text,
+                }
+            );
     }
 
-    // @notice buy a part of the fractioned Orb
+    /// @notice buy a Fractioned part of the Orb
+    /// @dev Emits 'BuyOrb'
+    /// @param buyer_address address of the buyer
+    /// @param amount_ the value of the fractioned orb
+    /// @param token_address_ address of the payment token
+    /// @param fractioned_unit_ tunit of the token to be purchased
     #[external(v0)]
     fn buy_orb(
         ref self: ContractState,
@@ -415,10 +568,22 @@ mod ERC721 {
 
         let parameters_data_ = Parameters { usage_level, user_satisfaction, subscription_demand };
         self.parameters_data.write(address_this, parameters_data_);
+        self
+            .emit(
+                BuyOrb {
+                    buyer_address: buyer_address,
+                    amount_: fractioned_price_,
+                    fractioned_unit_: fractioned_unit_,
+                    token_id: self.last_token_id.read() + 1,
+                }
+            );
     }
 
-    // @notice buy premium when orb is not active
-    // @param token_id_: Id of the fractioned token
+    /// @notice buy premium when orb is not active
+    /// @dev Emits 'NonActivePurchase'
+    /// @param token_id_: Id of the fractioned token
+    /// @param amount_ value to be paid for the fractioned Orb
+    /// @param token_address_ Token address to be used as payment
     #[external(v0)]
     fn buy_nonactive_orb(
         ref self: ContractState, token_id_: u256, amount_: u256, token_address_: ContractAddress
@@ -463,11 +628,22 @@ mod ERC721 {
         let user_satisfaction = 0;
         let parameters_monitor_ = MonitorParameters { usage_level, user_satisfaction };
         self.parameters_monitor.write(token_id_, parameters_monitor_);
+        self
+            .emit(
+                NonActivePurchase {
+                    new_owner: caller,
+                    previous_owner: formal_owner,
+                    amount_: amount_,
+                    token_id: token_id_
+                }
+            );
     }
 
-    // @external list non active premium
 
-    // @notice deposit fund into the contract
+    /// @notice deposit fund into the contract
+    /// @dev Emits 'TokenDeposit'
+    /// @param amount_ value to put into the contract
+    /// @param token_address_ TOken address to be used as payment
     #[external(v0)]
     fn deposit(ref self: ContractState, amount_: u256, token_address_: ContractAddress) {
         let caller = get_caller_address();
@@ -479,8 +655,11 @@ mod ERC721 {
         IERC20Dispatcher { contract_address: token_address_ }
             .transfer_from(caller, address_this, amount_);
         self.balances.write(caller, amount_);
+        self.emit(TokenDeposit { owner: caller, amount: amount_ });
     }
-    //@notice withdrawAll your fund from the contract
+    /// @notice withdrawAll your fund from the contract
+    /// @dev Emits 'WithdrawFund'
+    /// @param token_address_ TOken address to be used as payment
     #[external(v0)]
     fn withdraw_all_fund(ref self: ContractState, token_address_: ContractAddress) {
         let caller = get_caller_address();
@@ -495,8 +674,12 @@ mod ERC721 {
         IERC20Dispatcher { contract_address: token_address_ }
             .transfer_from(address_this, caller, my_balance);
         self.balances.write(caller, self.balances.read(caller) - my_balance);
+        self.emit(WithdrawFund { amount: my_balance, owner: caller });
     }
-    // @notice Withdraw fund from the contract
+    /// @notice Withdraw fund from the contract
+    /// @dev Emits 'WithdrawFund'
+    /// @param token_address_ TOken address to be used as payment
+    /// @param amount_ value of token to withdraw
     #[external(v0)]
     fn withdraw_fund(ref self: ContractState, amount_: u256, token_address_: ContractAddress) {
         let caller = get_caller_address();
@@ -512,9 +695,12 @@ mod ERC721 {
         IERC20Dispatcher { contract_address: token_address_ }
             .transfer_from(address_this, caller, amount_);
         self.balances.write(caller, self.balances.read(caller) - amount_);
+        self.emit(WithdrawFund { amount: my_balance, owner: caller });
     }
 
-    //@notice relinquish the orb: give up your Orb
+    /// @notice relinquish the orb: give up your Orb
+    /// @dev Emits 'OrbReliquish'
+    /// @param token_id_ id of the token to give up
     #[external(v0)]
     fn relinquish(ref self: ContractState, token_id_: u256,) {
         let caller = get_caller_address();
@@ -530,39 +716,57 @@ mod ERC721 {
 
         let parameters_ = MonitorParameters { usage_level, user_satisfaction };
         self.parameters_monitor.write(token_id_, parameters_);
+        self.emit(OrbReliquish { orb_owner: caller, token_id: token_id_ });
     }
-    // @notice get the balance of the caller
+    /// @notice get the fractioned balance of the caller
+    /// @param owner_ address of the fractioned balance owner
+    /// @return balance of the owner
     #[external(v0)]
     fn my_fractioned_balance(self: @ContractState, owner_: ContractAddress) -> u256 {
         self.fractioned_balances.read(owner_)
     }
 
+    /// @notice get ths subscription time left of the token_id_ in seconds
+    /// @param token_id_ fractioned unit id of the 
+    /// @return token_id time left in seconds 
     #[external(v0)]
     fn get_subscription_remaining_time(self: @ContractState, token_id_: u256) -> u256 {
         self.subscription_time.read(token_id_)
     }
 
+    /// @notice  get last invocation time in seconds
+    /// @param token_id_ fractioned unit id of the 
+    /// @return token_id time of last invocation in seconds 
     #[external(v0)]
     fn my_last_invocation_time(self: @ContractState, token_id_: u256) -> u256 {
         self.last_invocation.read(token_id_)
     }
-
+    /// @notice get invocation cooldown period
     #[external(v0)]
     fn get_invocation_period(self: @ContractState) -> u256 {
         self.cooldown.read()
     }
 
-    //@notice setLast invocation time
-    // TOBELOOKEDAT
+    /// @notice setLast invocation time
+    /// @param token_id_ of the fractioned Orb
+    /// @param_ owner_ fractioned Orb owner
     #[external(v0)]
     fn set_last_invocation_time(ref self: ContractState, token_id_: u256, owner_: ContractAddress) {
         assert(self.fractioned_balances.read(owner_) > 0, 'NO_TOKEN');
         assert(self.fractioned_token_id_owner.read(token_id_) == owner_, 'NOT_OWNER');
         let current_time: u256 = get_block_timestamp().try_into().unwrap();
         self.last_invocation.write(token_id_, current_time);
+        self.emit(LastInvocation { token_id: token_id_, invocation_time: current_time });
     }
 
-    // @notice set premimum data by the user
+    /// @notice set premimum data by the user
+    /// @param contract_address of the OrbPond
+    /// @param usage_level_ value for how the Orb is used
+    /// @param user_satisfaction_ value for how staisfied the caller is
+    /// @param subscription_demand_ value for the demand of the Orb
+    /// @param owner_ Fractioned Orb holder
+    /// @param token_id_ id of the owners fractioned Orb
+    #[external(v0)]
     fn set_premium_data_by_user(
         ref self: ContractState,
         contract_address: ContractAddress,
@@ -596,7 +800,14 @@ mod ERC721 {
         self.parameters_monitor.write(token_id_, monitor_parameters);
     }
 
-    // @notice set premium data by owner
+    /// @notice set premium data by owner
+    /// @param contract_address of the OrbPond
+    /// @param usage_level_ value for how the Orb is used
+    /// @param user_satisfaction_ value for how staisfied the caller is
+    /// @param subscription_demand_ value for the demand of the Orb
+    /// @param owner_ Fractioned Orb Main Keeper
+
+    #[external(v0)]
     fn set_premium_data_by_owner(
         ref self: ContractState,
         owner_: ContractAddress,
@@ -621,7 +832,9 @@ mod ERC721 {
     }
 
 
-    //@notice foreclose
+    /// @notice foreclose can be called by anyone on a particular fractioned token_id if the holder refused to renew its subscription 
+    /// @dev Emits 'ForeClosure'
+    /// @param token-id_ Fractioned Orb id 
     #[external(v0)]
     fn foreclose(ref self: ContractState, token_id_: u256) {
         let address_this = get_contract_address();
@@ -634,30 +847,36 @@ mod ERC721 {
 
         let parameters_ = MonitorParameters { usage_level, user_satisfaction };
         self.parameters_monitor.write(token_id_, parameters_);
+        self.emit(ForeClosure { token_id: token_id_ })
     }
-
+    /// @notice check address if owner
+    /// @param owner_ address to check status on
+    /// @returns the status oof the address 
     #[external(v0)]
     fn get_owner(self: @ContractState, owner_: ContractAddress) -> bool {
         self.only_owner(owner_)
     }
 
+    /// @notice get flagging period for Invocation 
     #[external(v0)]
     fn get_flagging_period(self: @ContractState) -> u256 {
         self.flagging_period.read()
     }
 
+    /// @notice get Pond address
     #[external(v0)]
     fn get_pond_address(self: @ContractState) -> ContractAddress {
         self.pond.read()
     }
-
+    /// @notice return main owner Address 
     #[external(v0)]
-    fn main_keeper(self: @ContractState)->ContractAddress{
+    fn main_keeper(self: @ContractState) -> ContractAddress {
         self.owner.read()
     }
 
     #[generate_trait]
     impl Private of PrivateTrait {
+        /// @notice return owner 
         fn only_owner(self: @ContractState, owner_: ContractAddress) -> bool {
             if (owner_ != self.owner.read()) {
                 false
@@ -666,7 +885,8 @@ mod ERC721 {
             }
         }
 
-        // @notice set the total orb Price
+        /// @notice set the total orb Price
+        /// @param price_ value of which the Orb is been willing to be given up for
         fn set_price_(ref self: ContractState, price_: u256) {
             assert(self.price.read() == 0, 'PRICE_AVAILABLE');
             self.price.write(price_);
@@ -713,7 +933,5 @@ mod ERC721 {
                 newPrice
             }
         }
-    // @notice show non active premium
-    // fn get_non_active_orb()->
     }
 }
