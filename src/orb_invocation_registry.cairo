@@ -30,8 +30,8 @@ trait IORB<TContractState> {
 #[starknet::contract]
 mod ORB_Invocation_Registry {
     use core::starknet::event::EventEmitter;
-use core::clone::Clone;
-use core::traits::Into;
+    use core::clone::Clone;
+    use core::traits::Into;
     use core::option::OptionTrait;
     use core::traits::TryInto;
     use starknet::{ContractAddress, get_caller_address, get_block_timestamp, get_contract_address};
@@ -77,9 +77,9 @@ use core::traits::Into;
     #[derive(Drop, starknet::Event)]
     enum Event {
         Invocation: Invocation,
-        Response:Response,
-        ResponseFlagging:ResponseFlagging,
-        PositiveRating:PositiveRating
+        Response: Response,
+        ResponseFlagging: ResponseFlagging,
+        PositiveRating: PositiveRating
     }
     #[derive(Drop, starknet::Event)]
     struct Invocation {
@@ -91,29 +91,28 @@ use core::traits::Into;
         content_hash: ByteArray
     }
     #[derive(Drop, starknet::Event)]
-    struct Response{
+    struct Response {
         #[key]
-        orb_address:ContractAddress,
-        invocation_id:u256,
+        orb_address: ContractAddress,
+        invocation_id: u256,
         responder: ContractAddress,
-        time_stamp:u256,
-        content_hash:ByteArray
-
+        time_stamp: u256,
+        content_hash: ByteArray
     }
     #[derive(Drop, starknet::Event)]
-    struct ResponseFlagging{
+    struct ResponseFlagging {
         #[key]
-        orb_address:ContractAddress,
-        invocation_id:u256,
-        flager:ContractAddress
+        orb_address: ContractAddress,
+        invocation_id: u256,
+        flager: ContractAddress
     }
     #[derive(Drop, starknet::Event)]
-    struct PositiveRating{
+    struct PositiveRating {
         #[key]
-        orb_address:ContractAddress,
-        invocation_id:u256,
-        usage_level:u256,
-        user_satisfaction:u256,
+        orb_address: ContractAddress,
+        invocation_id: u256,
+        usage_level: u256,
+        user_satisfaction: u256,
     }
     /// @notice this function prevent the nft contract from been violated
     /// @param contract_address Address of the Orb
@@ -169,7 +168,7 @@ use core::traits::Into;
         self.invocation_count.write(contract_address, id);
 
         let content_hash = content_hash_;
-        
+
         let content_hash_data = content_hash.clone();
         let time_stamp = current_time;
         let invocation_data_ = InvocationData { invoker: caller, content_hash, time_stamp };
@@ -189,7 +188,7 @@ use core::traits::Into;
                 }
             )
     }
-    
+
 
     /// @notice The Orb creator can use this function to respond to any existing invocation
     /// @dev Emits 'Response'
@@ -216,14 +215,16 @@ use core::traits::Into;
         self.responses.write((contract_address, invocation_id), data);
         IORBDispatcher { contract_address }
             .set_premium_data_by_owner(caller, address_this, usage_level_, 0, 0);
-        self.emit(Response{
-            orb_address:contract_address,
-            invocation_id:invocation_id,
-            responder: caller,
-            time_stamp:time_stamp,
-            content_hash:content_hash_data
-
-        })
+        self
+            .emit(
+                Response {
+                    orb_address: contract_address,
+                    invocation_id: invocation_id,
+                    responder: caller,
+                    time_stamp: time_stamp,
+                    content_hash: content_hash_data
+                }
+            )
     }
 
     /// @notice Fractioned Orb holder can flag Response durring Flagging period
@@ -263,11 +264,12 @@ use core::traits::Into;
         let user_sat: u256 = sat.into();
         IORBDispatcher { contract_address }
             .set_premium_data_by_user(address_this, usage_level_, user_sat, 0, caller, token_id_);
-        self.emit(ResponseFlagging{
-            orb_address:contract_address,
-            invocation_id:invocation_id_,
-            flager:caller
-        })
+        self
+            .emit(
+                ResponseFlagging {
+                    orb_address: contract_address, invocation_id: invocation_id_, flager: caller
+                }
+            )
     }
 
     /// @notice Rate invocation response positively
@@ -303,12 +305,15 @@ use core::traits::Into;
             .set_premium_data_by_user(
                 address_this, usage_level_, user_satisfaction_, 0, caller, token_id_
             );
-            self.emit(PositiveRating{
-                orb_address:contract_address,
-                invocation_id:invocation_id_,
-                usage_level:usage_level_,
-                user_satisfaction:user_satisfaction_,
-            });
+        self
+            .emit(
+                PositiveRating {
+                    orb_address: contract_address,
+                    invocation_id: invocation_id_,
+                    usage_level: usage_level_,
+                    user_satisfaction: user_satisfaction_,
+                }
+            );
     }
 
     /// @notice get the details of the invocation
