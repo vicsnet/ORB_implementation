@@ -13,6 +13,9 @@ snforge_std = { git = "https://github.com/foundry-rs/starknet-foundry", tag = "v
 
 [[target.starknet-contract]]
 sierra = true
+name = "orb"
+allowed-libfuncs-list = { name = "experimental" } 
 
 [scripts]
 test = "snforge test"
+

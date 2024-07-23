@@ -86,7 +86,7 @@ mod ORBInvocationTipJar {
     enum Event {
         TipDeposit: TipDeposit,
         TipsClaim: TipsClaim,
-        MinimumTipValue:MinimumTipValue
+        MinimumTipValue: MinimumTipValue
     }
     #[derive(Drop, starknet::Event)]
     struct TipDeposit {
@@ -102,10 +102,10 @@ mod ORBInvocationTipJar {
         invoker_portion: u256
     }
     #[derive(Drop, starknet::Event)]
-    struct MinimumTipValue{
-        orb_address:ContractAddress,
-        previous_tip:u256,
-        minimum_tip:u256
+    struct MinimumTipValue {
+        orb_address: ContractAddress,
+        previous_tip: u256,
+        minimum_tip: u256
     }
 
     /// @notice  Tips a specific invocation content hash on an Orb 
@@ -257,11 +257,14 @@ mod ORBInvocationTipJar {
         assert(main_keeper_ == get_caller_address(), 'NOT_MAIN_KEEPER');
         let previous_tip = self.minimum_tips.read(orb_address);
         self.minimum_tips.write(orb_address, minimum_tip_value);
-        self.emit(MinimumTipValue{
-            orb_address:orb_address,
-            previous_tip:previous_tip,
-            minimum_tip:minimum_tip_value
-        });
+        self
+            .emit(
+                MinimumTipValue {
+                    orb_address: orb_address,
+                    previous_tip: previous_tip,
+                    minimum_tip: minimum_tip_value
+                }
+            );
     }
 
     #[generate_trait]
@@ -288,8 +291,6 @@ mod ORBInvocationTipJar {
             self.tipper_tips.write((orb_address, hash_data_tip), 0);
             IERC20Dispatcher { contract_address: token_address }
                 .transfer(caller_address_, tip_value);
-       
-
         }
 
         /// @notice convert ByteArray to felt252 .
