@@ -55,7 +55,7 @@ mod ORB_pond {
     #[derive(Drop, starknet::Event)]
     pub struct OrbCreated {
         #[key]
-       pub contract_address: ContractAddress
+        pub contract_address: ContractAddress
     }
     #[derive(Drop, starknet::Event)]
     pub struct VersionRegistration {
@@ -77,7 +77,7 @@ mod ORB_pond {
         self.registry.write(registry_)
     }
     #[abi(embed_v0)]
-    impl OrbPond of super::IOrbPondTrait<ContractState>{
+    impl OrbPond of super::IOrbPondTrait<ContractState> {
         /// @notice create a new Orb
         /// @dev Emits 'OrbCreated' 
         /// @param name_ Name of the Orb used for display Purposs
@@ -97,16 +97,16 @@ mod ORB_pond {
             total_supply_.serialize(ref constructor_calldata);
             token_uri_.serialize(ref constructor_calldata);
             get_caller_address().serialize(ref constructor_calldata);
-    
+
             let (deployed_address, _) = deploy_syscall(
                 self.ORBHash.read(), 0, constructor_calldata.span(), false
             )
                 .expect('FAILED_TO_DEPLOY');
-    
+
             self.orbs.write(self.orb_count.read(), deployed_address);
             self.orb_count.write(self.orb_count.read() + 1);
             self.emit(OrbCreated { contract_address: deployed_address });
-    
+
             deployed_address
         }
         /// @notice Register a new version of the Orb Implementation Contract
@@ -120,12 +120,12 @@ mod ORB_pond {
             self.ORBHash.write(orb_class_hash_);
             self.emit(VersionRegistration { version: version_, class_hash: orb_class_hash_ });
         }
-    
+
         /// @notice Returns the version of the Orb Pond.
         fn version(self: @ContractState) -> u256 {
             VERSION
         }
-    
+
         /// @notice Sets the registered Orb Implementation version and class hash to be used for the Orb
         /// @dev Emits 'OrbInitialVersionUpdate'
         /// @param orb_initial_version_ Registered Orb implementation version number to be used for new Orbs
@@ -137,17 +137,17 @@ mod ORB_pond {
             self
                 .emit(
                     OrbInitialVersionUpdate {
-                        previous_version: previous_version_, orb_initial_version: orb_initial_version_
+                        previous_version: previous_version_,
+                        orb_initial_version: orb_initial_version_
                     }
                 );
         }
-    
+
         /// @notice  Returns registry address
         fn get_registry(self: @ContractState) -> ContractAddress {
             self.registry.read()
         }
-    
-        // #[external(v0)]
-        // fn set_registry(ref self: ContractState,) {}
+    // #[external(v0)]
+    // fn set_registry(ref self: ContractState,) {}
     }
 }
