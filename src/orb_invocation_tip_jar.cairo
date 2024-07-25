@@ -69,7 +69,7 @@ trait OrbInvocationTipJarTrait<TContractState> {
     );
 }
 #[starknet::contract]
-mod ORBInvocationTipJar {
+pub mod ORBInvocationTipJar {
     use core::starknet::event::EventEmitter;
     use core::clone::Clone;
     use core::box::BoxTrait;
@@ -120,29 +120,29 @@ mod ORBInvocationTipJar {
 
     #[event]
     #[derive(Drop, starknet::Event)]
-    enum Event {
+    pub enum Event {
         TipDeposit: TipDeposit,
         TipsClaim: TipsClaim,
         MinimumTipValue: MinimumTipValue
     }
     #[derive(Drop, starknet::Event)]
-    struct TipDeposit {
-        orb_address: ContractAddress,
-        invocation_hash: ByteArray,
-        tipper: ContractAddress,
+    pub struct TipDeposit {
+        pub orb_address: ContractAddress,
+        pub invocation_hash: ByteArray,
+        pub tipper: ContractAddress,
     }
     #[derive(Drop, starknet::Event)]
-    struct TipsClaim {
-        orb_address: ContractAddress,
-        content_hash: ByteArray,
-        invoker: ContractAddress,
-        invoker_portion: u256
+    pub struct TipsClaim {
+        pub orb_address: ContractAddress,
+        pub content_hash: ByteArray,
+        pub invoker: ContractAddress,
+        pub invoker_portion: u256
     }
     #[derive(Drop, starknet::Event)]
-    struct MinimumTipValue {
-        orb_address: ContractAddress,
-        previous_tip: u256,
-        minimum_tip: u256
+    pub struct MinimumTipValue {
+        pub orb_address: ContractAddress,
+        pub previous_tip: u256,
+        pub minimum_tip: u256
     }
 
     impl OrbInvocationTipJar of super::OrbInvocationTipJarTrait<ContractState> {
