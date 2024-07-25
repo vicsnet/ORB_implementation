@@ -78,7 +78,6 @@ mod ORB_pond {
     }
     #[abi(embed_v0)]
     impl OrbPond of super::IOrbPondTrait<ContractState>{
-
         /// @notice create a new Orb
         /// @dev Emits 'OrbCreated' 
         /// @param name_ Name of the Orb used for display Purposs
