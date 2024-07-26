@@ -16,6 +16,8 @@ trait IORB<TContractState> {
         owner_: ContractAddress,
         token_id_: u256
     );
+    fn get_premium_data_by_user(self: @TContractState, token_id_: u256) -> (u256, u256);
+
     fn set_premium_data_by_owner(
         ref self: TContractState,
         owner_: ContractAddress,
@@ -27,7 +29,7 @@ trait IORB<TContractState> {
     fn get_flagging_period(self: @TContractState) -> u256;
 }
 #[starknet::interface]
-trait IOrbInvocationRegistryTrait<TContractState> {
+pub trait IOrbInvocationRegistryTrait<TContractState> {
     fn prevent_violation(
         self: @TContractState, contract_address: ContractAddress, owner_: ContractAddress
     ) -> bool;
@@ -40,7 +42,7 @@ trait IOrbInvocationRegistryTrait<TContractState> {
         ref self: TContractState,
         content_hash_: ByteArray,
         contract_address: ContractAddress,
-        token_id_: u256
+        token_id_: u256,
     );
 
     fn respond(
@@ -56,7 +58,7 @@ trait IOrbInvocationRegistryTrait<TContractState> {
         token_id_: u256
     );
 
-    fn rate_Positive_reponse(
+    fn rate_positive_reponse(
         ref self: TContractState,
         contract_address: ContractAddress,
         invocation_id_: u256,
@@ -69,7 +71,7 @@ trait IOrbInvocationRegistryTrait<TContractState> {
 }
 
 #[starknet::contract]
-pub mod ORB_Invocation_Registry {
+pub mod ORBInvocationRegistry {
     use core::starknet::event::EventEmitter;
     use core::clone::Clone;
     use core::traits::Into;
@@ -99,6 +101,7 @@ pub mod ORB_Invocation_Registry {
         authorized_contract: LegacyMap::<ContractAddress, bool>,
         // Gap used to prevent storage collisions
         gap: u256,
+        owner: ContractAddress,
     }
 
     #[derive(Drop, Serde, starknet::Store)]
@@ -156,6 +159,11 @@ pub mod ORB_Invocation_Registry {
         pub user_satisfaction: u256,
     }
 
+    #[constructor]
+    fn constructor(ref self: ContractState, owner_: ContractAddress) {
+        self.owner.write(owner_);
+    }
+
     #[abi(embed_v0)]
     impl OrbInvocationRegistry of super::IOrbInvocationRegistryTrait<ContractState> {
         /// @notice this function prevent the nft contract from been violated
@@ -169,7 +177,6 @@ pub mod ORB_Invocation_Registry {
             );
             true
         }
-
         /// @notice prevent violation by the main Orb_keeper
         /// @param contract_address Address of the Orb
         /// @param owner_ Address of the main keeper
@@ -179,21 +186,23 @@ pub mod ORB_Invocation_Registry {
             assert(IORBDispatcher { contract_address }.get_owner(owner_) == true, 'NOT_OWNER');
             true
         }
-
         /// @notice invokes the Orb. Allow the Fractioned Orb holder to submit content hash
         /// @dev Emits 'Invocation'
         /// @param content_hash_ hash of the cleartext
         /// @param contract_address Address of the Orb
         /// @param token_id_ Id of the token owned
+        /// @param invoker_addres
         fn invoke_with_hash(
             ref self: ContractState,
             content_hash_: ByteArray,
             contract_address: ContractAddress,
-            token_id_: u256
+            token_id_: u256,
         ) {
             let caller = get_caller_address();
+
             let address_this = get_contract_address();
             let current_time: u256 = get_block_timestamp().try_into().unwrap();
+            // print!("{caller}");
             // check if caller has a token id
             assert(
                 IORBDispatcher { contract_address }.my_fractioned_balance(caller) > 0,
@@ -246,7 +255,9 @@ pub mod ORB_Invocation_Registry {
             let address_this = get_contract_address();
             let usage_level_ = 001;
             assert(IORBDispatcher { contract_address }.get_owner(caller) == true, 'NOT_OWNER');
-            assert(self.response_exists(contract_address, invocation_id), 'RESPONSE_EXIST');
+            assert(
+                self.response_exists(contract_address, invocation_id) == false, 'RESPONSE_EXIST'
+            );
             let content_hash = content_hash_;
             let content_hash_data = content_hash.clone();
             let time_stamp: u256 = get_block_timestamp().try_into().unwrap();
@@ -281,7 +292,7 @@ pub mod ORB_Invocation_Registry {
             let caller = get_caller_address();
 
             assert(
-                self.response_exists(contract_address, invocation_id_) == false, 'RESPONSE_EXIST'
+                self.response_exists(contract_address, invocation_id_) == true, 'RESPONSE_EXIST'
             );
             let flagging_time = IORBDispatcher { contract_address }.get_flagging_period();
             let current_time: u256 = get_block_timestamp().try_into().unwrap();
@@ -299,21 +310,29 @@ pub mod ORB_Invocation_Registry {
 
             self.response_flagged.write((contract_address, invocation_id_), true);
             let usage_level_ = 001;
-            let user_satisfaction_: i64 = -001;
+            let (_, user_satisfaction_) = IORBDispatcher { contract_address }
+                .get_premium_data_by_user(token_id_);
 
-            let sat: u128 = user_satisfaction_.try_into().unwrap();
+            if (user_satisfaction_ == 0) {
+                let sat = 0;
+                IORBDispatcher { contract_address }
+                    .set_premium_data_by_user(
+                        address_this, usage_level_, sat, 0, caller, token_id_
+                    );
+            } else {
+                let sat = user_satisfaction_ - 001;
+                IORBDispatcher { contract_address }
+                    .set_premium_data_by_user(
+                        address_this, usage_level_, sat, 0, caller, token_id_
+                    );
+            }
 
-            let user_sat: u256 = sat.into();
-            IORBDispatcher { contract_address }
-                .set_premium_data_by_user(
-                    address_this, usage_level_, user_sat, 0, caller, token_id_
-                );
             self
                 .emit(
                     ResponseFlagging {
                         orb_address: contract_address, invocation_id: invocation_id_, flager: caller
                     }
-                )
+                );
         }
 
         /// @notice Rate invocation response positively
@@ -321,7 +340,7 @@ pub mod ORB_Invocation_Registry {
         /// @param contract_address Address of the Orb
         /// @param invocation_id_ Id of the invocated content
         /// @param token_id_ Fractioned token Id of the Orb
-        fn rate_Positive_reponse(
+        fn rate_positive_reponse(
             ref self: ContractState,
             contract_address: ContractAddress,
             invocation_id_: u256,
@@ -329,9 +348,7 @@ pub mod ORB_Invocation_Registry {
         ) {
             let caller = get_caller_address();
             let address_this = get_contract_address();
-            assert(
-                self.response_exists(contract_address, invocation_id_) == false, 'RESPONSE_EXIST'
-            );
+            assert(self.response_exists(contract_address, invocation_id_) == true, 'NO_RESPONSE');
             let flagging_time = IORBDispatcher { contract_address }.get_flagging_period();
             let current_time: u256 = get_block_timestamp().try_into().unwrap();
             let response_time = self.responses.read((contract_address, invocation_id_)).time_stamp;

@@ -18,7 +18,8 @@ pub trait IOrbPondTrait<TContractState> {
 
 
 #[starknet::contract]
-mod ORB_pond {
+pub mod ORB_pond {
+    use core::num::traits::Zero;
     use core::starknet::event::EventEmitter;
     use starknet::{
         ContractAddress, ClassHash, SyscallResultTrait, syscalls::deploy_syscall, get_caller_address
@@ -76,6 +77,7 @@ mod ORB_pond {
         self.owner.write(get_caller_address());
         self.registry.write(registry_)
     }
+    
     #[abi(embed_v0)]
     impl OrbPond of super::IOrbPondTrait<ContractState> {
         /// @notice create a new Orb
@@ -91,6 +93,7 @@ mod ORB_pond {
             token_uri_: felt252,
             total_supply_: u256,
         ) -> ContractAddress {
+            assert(!self.ORBHash.read().is_zero(), 'SET_ORBHASH');
             let mut constructor_calldata = ArrayTrait::new();
             name_.serialize(ref constructor_calldata);
             symbol_.serialize(ref constructor_calldata);
@@ -147,7 +150,5 @@ mod ORB_pond {
         fn get_registry(self: @ContractState) -> ContractAddress {
             self.registry.read()
         }
-    // #[external(v0)]
-    // fn set_registry(ref self: ContractState,) {}
     }
 }

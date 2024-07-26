@@ -135,6 +135,8 @@ pub trait IOrbTrait<TContractState> {
         token_id_: u256
     );
 
+    fn get_premium_data_by_user(self: @TContractState, token_id_: u256) -> (u256, u256);
+
     fn set_premium_data_by_owner(
         ref self: TContractState,
         owner_: ContractAddress,
@@ -626,6 +628,7 @@ pub mod ORB {
                 .my_fractioned_orb_price(usage_level_, user_satisfaction_, subscription_demand_);
             let single_price = current_price_;
             let fractioned_price_ = single_price * fractioned_unit_;
+            print!("{fractioned_price_}");
             assert(amount_ >= fractioned_price_, 'NOT_CURRENT_PRICE');
             let balance_ = IERC20Dispatcher { contract_address: token_address_ }
                 .balance_of(buyer_address);
@@ -663,6 +666,7 @@ pub mod ORB {
             let parameters_data_ = Parameters {
                 usage_level, user_satisfaction, subscription_demand
             };
+
             self.parameters_data.write(address_this, parameters_data_);
 
             self
@@ -894,6 +898,14 @@ pub mod ORB {
             self.parameters_monitor.write(token_id_, monitor_parameters);
         }
 
+        ///@notice get premium data by user
+        /// 
+        fn get_premium_data_by_user(self: @ContractState, token_id_: u256) -> (u256, u256) {
+            (
+                self.parameters_monitor.read(token_id_).usage_level,
+                self.parameters_monitor.read(token_id_).user_satisfaction
+            )
+        }
         /// @notice set premium data by owner
         /// @param contract_address of the OrbPond
         /// @param usage_level_ value for how the Orb is used

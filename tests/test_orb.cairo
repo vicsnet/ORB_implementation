@@ -35,6 +35,7 @@ fn deploy_contract(
     start_cheat_caller_address(contract_address, owner_.try_into().unwrap());
 
     let (deployedContract, _) = contract.deploy(@calldata).unwrap();
+
     stop_cheat_caller_address(contract_address);
 
     deployedContract

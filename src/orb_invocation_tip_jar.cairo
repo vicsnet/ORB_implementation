@@ -1,6 +1,6 @@
 use starknet::{ContractAddress};
 #[starknet::interface]
-trait IERC20<T> {
+pub trait IERC20<T> {
     fn balance_of(self: @T, account: ContractAddress) -> u256;
     fn allowance(self: @T, owner: ContractAddress, spender: ContractAddress) -> u256;
 
@@ -14,24 +14,24 @@ trait IERC20<T> {
 }
 
 #[starknet::interface]
-trait ORBPond<TContractState> {
+pub trait ORBPond<TContractState> {
     fn get_registry(self: @TContractState) -> ContractAddress;
 }
 
 #[starknet::interface]
-trait ORB<TContractState> {
+pub trait ORB<TContractState> {
     fn get_pond_address(self: @TContractState) -> ContractAddress;
     fn main_keeper(self: @TContractState) -> ContractAddress;
 }
 
 #[starknet::interface]
-trait OrbInvocationRegistry<TContractState> {
+pub trait OrbInvocationRegistry<TContractState> {
     fn get_invocations(
         self: @TContractState, orb_address: ContractAddress, invocation_id_: u256
     ) -> (ByteArray, ContractAddress);
 }
 #[starknet::interface]
-trait OrbInvocationTipJarTrait<TContractState> {
+pub trait OrbInvocationTipJarTrait<TContractState> {
     fn tip_invocation(
         ref self: TContractState,
         orb_address: ContractAddress,
@@ -67,9 +67,11 @@ trait OrbInvocationTipJarTrait<TContractState> {
     fn set_minimum_tip_value(
         ref self: TContractState, orb_address: ContractAddress, minimum_tip_value: u256
     );
+
+    fn set_platform_fee(ref self:TContractState, fee:u256);
 }
 #[starknet::contract]
-pub mod ORBInvocationTipJar {
+pub mod ORB_invocation_tipJar {
     use core::starknet::event::EventEmitter;
     use core::clone::Clone;
     use core::box::BoxTrait;
@@ -105,6 +107,7 @@ pub mod ORBInvocationTipJar {
         platform_fee: u256,
         // Orbland Revenue Address
         platform_address: ContractAddress,
+        owner:ContractAddress,
     }
 
     #[derive(Drop, Hash)]
@@ -144,7 +147,11 @@ pub mod ORBInvocationTipJar {
         pub previous_tip: u256,
         pub minimum_tip: u256
     }
-
+    #[constructor]
+    fn constructor(ref self: ContractState, owner_:ContractAddress) {
+        self.owner.write(owner_);
+    }
+    #[abi(embed_v0)]
     impl OrbInvocationTipJar of super::OrbInvocationTipJarTrait<ContractState> {
         /// @notice  Tips a specific invocation content hash on an Orb 
         /// @dev Emits 'TipDeposit'
@@ -160,9 +167,11 @@ pub mod ORBInvocationTipJar {
             let caller = get_caller_address();
             let address_this = get_contract_address();
             let minimum_tip_ = self.minimum_tips.read(orb_address);
-            assert(tip_amount >= minimum_tip_, 'INSUFFICIENT TIP');
+            assert(tip_amount >= minimum_tip_, 'INSUFFICIENT_TIP');
+           
             let hash_ = invocation_hash_.clone();
             let my_hash_data_ = hash_.clone();
+           
             let hash_data_ = self.hash_(orb_address, hash_);
             assert(self.claimed_invocations.read(hash_data_) <= 0, 'INVOCATION_CLAIMED');
             let tipper_hash_ = self.hash_(caller, invocation_hash_);
@@ -187,7 +196,7 @@ pub mod ORBInvocationTipJar {
                     TipDeposit {
                         orb_address: orb_address, invocation_hash: my_hash_data_, tipper: caller,
                     }
-                )
+                );
         }
         /// @notice Claim all tips for a given sugested invocation
         /// @dev Emits 'TipsClaim'
@@ -303,7 +312,18 @@ pub mod ORBInvocationTipJar {
                     }
                 );
         }
+        
+        /// @notice set Platform Fee 
+        /// @param fee charge on tips
+        
+        fn set_platform_fee(ref self:ContractState, fee:u256){
+            let caller = get_caller_address();
+            assert(caller == self.owner.read(), 'NOT_OWNER');
+            self.platform_fee.write(fee);
+        }
     }
+    
+
 
     #[generate_trait]
     impl Private of PrivateTrait {
@@ -332,27 +352,34 @@ pub mod ORBInvocationTipJar {
         }
 
         /// @notice convert ByteArray to felt252 .
-        fn byte_array_to_felt252(ref self: ContractState, byte_array: ByteArray) -> felt252 {
-            let mut result: felt252 = 0;
-            let my_hash = Hash_byte { hash: byte_array };
-            let mut i = 0;
+        fn byte_array_to_felt252(ref self: ContractState, byte_array: ByteArray) -> Option<felt252> {
+
             let mut constructor_calldata = ArrayTrait::new();
-            my_hash.serialize(ref constructor_calldata);
 
-            while i < constructor_calldata
-                .len() {
-                    let a_ = constructor_calldata.at(i);
-                    result += *a_;
-                };
+            byte_array.serialize(ref constructor_calldata);
 
-            result
+            let felt_element = *constructor_calldata.at(0);
+            if (!felt_element.is_zero() ){
+                Option::None
+            }else{
+                Option::Some(*constructor_calldata.at(1))
+            }
+
         }
 
+        fn option_to_felt252(ref self:ContractState, byte_array:ByteArray) -> felt252 {
+            let option_value = self.byte_array_to_felt252(byte_array);
+            match option_value {
+                Option::Some(value) => value,
+                Option::None => 0, // or any default value you prefer
+            }
+        }
 
         fn hash_(
             ref self: ContractState, orb_address: ContractAddress, invocation_hash: ByteArray
         ) -> felt252 {
-            let hashed_data = self.byte_array_to_felt252(invocation_hash);
+            let hashed_data = self.option_to_felt252(invocation_hash);
+         
             let my_hashed_data = HashData { orb_address, invocation_hash: hashed_data };
 
             let poseidon_hash = PoseidonTrait::new().update_with(my_hashed_data).finalize();
