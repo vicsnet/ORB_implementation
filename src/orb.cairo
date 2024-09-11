@@ -38,7 +38,7 @@ pub trait IERC721_token_receiver<TContractState> {
 pub trait IERC721_metadata<TContractState> {
     fn name(self: @TContractState) -> felt252;
     fn symbol(self: @TContractState) -> felt252;
-    fn token_uri(self: @TContractState) -> felt252;
+    fn token_uri(self: @TContractState) -> ByteArray;
 }
 #[starknet::interface]
 pub trait IERC20<T> {
@@ -188,7 +188,7 @@ pub mod ORB {
     struct Storage {
         name: felt252,
         symbol: felt252,
-        token_URI: felt252,
+        token_URI: ByteArray,
         owner: ContractAddress,
         token_id: u256,
         // Honored Until: time stamp until which the Orb Oath is honored for the keeper
@@ -384,7 +384,7 @@ pub mod ORB {
         name_: felt252,
         symbol_: felt252,
         total_supply_: u256,
-        token_uri_: felt252,
+        token_uri_: ByteArray,
         owner_: ContractAddress
     ) {
         assert(total_supply_ <= MAX_SUPPLY, 'SUPPLY_EXCEED_MAX');
@@ -408,7 +408,7 @@ pub mod ORB {
             self.symbol.read()
         }
         /// @dev returns tokenURI JSONs
-        fn token_uri(self: @ContractState) -> felt252 {
+        fn token_uri(self: @ContractState) -> ByteArray {
             self.token_URI.read()
         }
     }
@@ -628,7 +628,7 @@ pub mod ORB {
                 .my_fractioned_orb_price(usage_level_, user_satisfaction_, subscription_demand_);
             let single_price = current_price_;
             let fractioned_price_ = single_price * fractioned_unit_;
-            print!("{fractioned_price_}");
+            // print!("{fractioned_price_}");
             assert(amount_ >= fractioned_price_, 'NOT_CURRENT_PRICE');
             let balance_ = IERC20Dispatcher { contract_address: token_address_ }
                 .balance_of(buyer_address);

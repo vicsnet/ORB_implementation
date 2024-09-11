@@ -13,9 +13,12 @@ snforge_std = { git = "https://github.com/foundry-rs/starknet-foundry", tag = "v
 
 [[target.starknet-contract]]
 sierra = true
-name = "orb"
+casm = true
+name = "orbland"
 allowed-libfuncs-list = { name = "experimental" } 
 
 [scripts]
 test = "snforge test"
+[tool.sncast.account_orb1]
+url = "https://free-rpc.nethermind.io/sepolia-juno/v0_7"
 

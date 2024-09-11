@@ -1,0 +1,6 @@
+
+[sncast.account_orb1]
+account = "account_orbland"
+accounts-file = "/home/adebisivince/.starknet_accounts/starknet_open_zeppelin_accounts.json"
+url = "https://free-rpc.nethermind.io/sepolia-juno/v0_7"
+

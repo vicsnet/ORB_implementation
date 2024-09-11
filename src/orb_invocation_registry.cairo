@@ -167,7 +167,7 @@ pub mod ORBInvocationRegistry {
     #[abi(embed_v0)]
     impl OrbInvocationRegistry of super::IOrbInvocationRegistryTrait<ContractState> {
         /// @notice this function prevent the nft contract from been violated
-        /// @param contract_address Address of the Orb
+        /// @param contract_addr ess Address of the Orb
         /// @param owner_ Address of the Fractioned token Owner
         fn prevent_violation(
             self: @ContractState, contract_address: ContractAddress, owner_: ContractAddress

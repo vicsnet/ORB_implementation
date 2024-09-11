@@ -27,7 +27,7 @@ fn deploy_orb(
     name_: felt252,
     symbol_: felt252,
     total_supply_: u256,
-    token_uri_: felt252,
+    token_uri_: ByteArray,
     owner_: ContractAddress
 ) -> ContractAddress {
     let contract = declare("ORB").unwrap();
@@ -174,7 +174,9 @@ fn create_orb() -> ContractAddress {
     stop_cheat_caller_address(orb_pond_address);
 
     start_cheat_caller_address(orb_pond_address, newKeeper);
-    let new_orb_address = orbpond_dispatcher.create_orb('vinceOrb', 'VOB', 'qwertyu', 5);
+    let uri:ByteArray ="qwertyue";
+
+    let new_orb_address = orbpond_dispatcher.create_orb('vinceOrb', 'VOB', uri, 5);
     stop_cheat_caller_address(orb_pond_address);
     spy
         .assert_emitted(
@@ -302,7 +304,8 @@ fn invokeHash() -> (ContractAddress, ContractAddress) {
     stop_cheat_caller_address(orb_pond_address);
 
     start_cheat_caller_address(orb_pond_address, newKeeper);
-    let new_orb_address = orbpond_dispatcher.create_orb('vinceOrb', 'VOB', 'qwertyu', 5);
+    let uri:ByteArray ="qwertyue";
+    let new_orb_address = orbpond_dispatcher.create_orb('vinceOrb', 'VOB', uri, 5);
 
     stop_cheat_caller_address(orb_pond_address);
 
@@ -509,7 +512,8 @@ fn tip_invocation()->(ContractAddress, ContractAddress, ContractAddress){
     stop_cheat_caller_address(orb_pond_address);
 
     start_cheat_caller_address(orb_pond_address, newKeeper);
-    let new_orb_address = orbpond_dispatcher.create_orb('vinceOrb', 'VOB', 'qwertyu', 5);
+    let uri:ByteArray =  "qwertyu";
+    let new_orb_address = orbpond_dispatcher.create_orb('vinceOrb', 'VOB', uri, 5);
 
     stop_cheat_caller_address(orb_pond_address);
 

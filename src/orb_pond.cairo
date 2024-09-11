@@ -5,7 +5,7 @@ pub trait IOrbPondTrait<TContractState> {
         ref self: TContractState,
         name_: felt252,
         symbol_: felt252,
-        token_uri_: felt252,
+        token_uri_: ByteArray,
         total_supply_: u256,
     ) -> ContractAddress;
 
@@ -14,6 +14,8 @@ pub trait IOrbPondTrait<TContractState> {
     fn version(self: @TContractState) -> u256;
     fn set_orb_initial_version(ref self: TContractState, orb_initial_version_: u256);
     fn get_registry(self: @TContractState) -> ContractAddress;
+    fn get_owner(self: @TContractState) -> ContractAddress;
+    
 }
 
 
@@ -73,8 +75,10 @@ pub mod ORB_pond {
     /// @notice Contract Initalizes, setting owner and registry 
     /// @param registry_ The adddress of the Orb Invocation Registry
     #[constructor]
-    fn constructor(ref self: ContractState, registry_: ContractAddress) {
-        self.owner.write(get_caller_address());
+    fn constructor(ref self: ContractState, registry_: ContractAddress, owner_:ContractAddress) {
+        // let owner_address = get_caller_address();  
+        // assert(owner_ == owner_address, 'ADDRESS_DOES_NOT_MATCH');
+        self.owner.write( owner_);
         self.registry.write(registry_)
     }
     
@@ -90,16 +94,18 @@ pub mod ORB_pond {
             ref self: ContractState,
             name_: felt252,
             symbol_: felt252,
-            token_uri_: felt252,
+            token_uri_: ByteArray,
             total_supply_: u256,
         ) -> ContractAddress {
             assert(!self.ORBHash.read().is_zero(), 'SET_ORBHASH');
             let mut constructor_calldata = ArrayTrait::new();
+
             name_.serialize(ref constructor_calldata);
             symbol_.serialize(ref constructor_calldata);
             total_supply_.serialize(ref constructor_calldata);
             token_uri_.serialize(ref constructor_calldata);
             get_caller_address().serialize(ref constructor_calldata);
+
 
             let (deployed_address, _) = deploy_syscall(
                 self.ORBHash.read(), 0, constructor_calldata.span(), false
@@ -112,6 +118,8 @@ pub mod ORB_pond {
 
             deployed_address
         }
+
+       
         /// @notice Register a new version of the Orb Implementation Contract
         /// @dev Emits 'VersionRegistration'
         /// @param  version_ Version number of the new implementation contract
@@ -150,5 +158,13 @@ pub mod ORB_pond {
         fn get_registry(self: @ContractState) -> ContractAddress {
             self.registry.read()
         }
+
+        /// @notice Returns Contract owner address
+        fn get_owner(self: @ContractState) -> ContractAddress{
+            self.owner.read()
+        }
+
     }
+
+  
 }
