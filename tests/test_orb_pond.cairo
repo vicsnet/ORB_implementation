@@ -18,7 +18,8 @@ use orbland::orb_invocation_registry::{
 };
 
 use orbland::orb_invocation_tip_jar::{
-    OrbInvocationTipJarTraitDispatcher, OrbInvocationTipJarTraitDispatcherTrait, ORB_invocation_tipJar
+    OrbInvocationTipJarTraitDispatcher, OrbInvocationTipJarTraitDispatcherTrait,
+    ORB_invocation_tipJar
 };
 
 use orbland::mock_erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
@@ -27,7 +28,7 @@ fn deploy_orb(
     name_: felt252,
     symbol_: felt252,
     total_supply_: u256,
-    token_uri_: ByteArray,
+    token_uri_: (felt252, felt252),
     owner_: ContractAddress
 ) -> ContractAddress {
     let contract = declare("ORB").unwrap();
@@ -37,7 +38,8 @@ fn deploy_orb(
     total_supply_.serialize(ref calldata);
     token_uri_.serialize(ref calldata);
     owner_.serialize(ref calldata);
-    // Precalculate the address to obtain the contract address before the constructor call (deploy) itself
+    // Precalculate the address to obtain the contract address before the constructor call (deploy)
+    // itself
     let contract_address = contract.precalculate_address(@calldata);
     start_cheat_caller_address(contract_address, owner_.try_into().unwrap());
 
@@ -84,7 +86,8 @@ fn deploy_orbinvocation_registry(owner: ContractAddress) -> ContractAddress {
 
     owner.serialize(ref calldata);
 
-    // Precalculate the address to obtain the contract address before the constructor call (deploy) itself
+    // Precalculate the address to obtain the contract address before the constructor call (deploy)
+    // itself
     let contract_address = contract.precalculate_address(@calldata);
     start_cheat_caller_address(contract_address, owner.try_into().unwrap());
 
@@ -95,12 +98,12 @@ fn deploy_orbinvocation_registry(owner: ContractAddress) -> ContractAddress {
     deployedContract
 }
 
-fn deploy_orb_invocation_tipjar(owner:ContractAddress) -> ContractAddress {
+fn deploy_orb_invocation_tipjar(owner: ContractAddress) -> ContractAddress {
     let contract = declare("ORB_invocation_tipJar").unwrap();
     let mut calldata = ArrayTrait::new();
 
     owner.serialize(ref calldata);
-    //  precalculate address 
+    //  precalculate address
     let contract_address = contract.precalculate_address(@calldata);
 
     start_cheat_caller_address(contract_address, owner.try_into().unwrap());
@@ -174,9 +177,9 @@ fn create_orb() -> ContractAddress {
     stop_cheat_caller_address(orb_pond_address);
 
     start_cheat_caller_address(orb_pond_address, newKeeper);
-    let uri:ByteArray ="qwertyue";
-
-    let new_orb_address = orbpond_dispatcher.create_orb('vinceOrb', 'VOB', uri, 5);
+    let uri1: felt252 = 1165125987;
+    let uri2: felt252 = 1165125987;
+    let new_orb_address = orbpond_dispatcher.create_orb('vinceOrb', 'VOB', uri1, uri2, 5);
     stop_cheat_caller_address(orb_pond_address);
     spy
         .assert_emitted(
@@ -304,8 +307,9 @@ fn invokeHash() -> (ContractAddress, ContractAddress) {
     stop_cheat_caller_address(orb_pond_address);
 
     start_cheat_caller_address(orb_pond_address, newKeeper);
-    let uri:ByteArray ="qwertyue";
-    let new_orb_address = orbpond_dispatcher.create_orb('vinceOrb', 'VOB', uri, 5);
+    let uri1: felt252 = 1165125987;
+    let uri2: felt252 = 1165125987;
+    let new_orb_address = orbpond_dispatcher.create_orb('vinceOrb', 'VOB', uri1, uri2, 5);
 
     stop_cheat_caller_address(orb_pond_address);
 
@@ -340,47 +344,47 @@ fn invokeHash() -> (ContractAddress, ContractAddress) {
     orbInvocationDispatcher.invoke_with_hash("qwerty", new_orb_address, 1);
 
     spy
-    .assert_emitted(
-        @array![
-            (
-                orbInvocationAddress,
-                ORBInvocationRegistry::Event::Invocation(
-                    ORBInvocationRegistry::Invocation {
-                        orb_address: new_orb_address,
-                        invocation_id: 1,
-                        invoker: buyer1,
-                        time_stamp: 20,
-                        content_hash: "qwerty"
-                    }
+        .assert_emitted(
+            @array![
+                (
+                    orbInvocationAddress,
+                    ORBInvocationRegistry::Event::Invocation(
+                        ORBInvocationRegistry::Invocation {
+                            orb_address: new_orb_address,
+                            invocation_id: 1,
+                            invoker: buyer1,
+                            time_stamp: 20,
+                            content_hash: "qwerty"
+                        }
+                    )
                 )
-            )
-        ]
-    );
+            ]
+        );
     stop_cheat_block_timestamp(orbInvocationAddress);
     stop_cheat_caller_address(orbInvocationAddress);
 
-    // RESPOND 
+    // RESPOND
     start_cheat_caller_address(orbInvocationAddress, newKeeper);
     start_cheat_block_timestamp(orbInvocationAddress, 40);
     orbInvocationDispatcher.respond(1, "qwertqwey", new_orb_address);
 
     spy
-    .assert_emitted(
-        @array![
-            (
-                orbInvocationAddress,
-                ORBInvocationRegistry::Event::Response(
-                    ORBInvocationRegistry::Response {
-                        orb_address: new_orb_address,
-                        invocation_id: 1,
-                        responder: newKeeper,
-                        time_stamp: 40,
-                        content_hash: "qwertqwey"
-                    }
+        .assert_emitted(
+            @array![
+                (
+                    orbInvocationAddress,
+                    ORBInvocationRegistry::Event::Response(
+                        ORBInvocationRegistry::Response {
+                            orb_address: new_orb_address,
+                            invocation_id: 1,
+                            responder: newKeeper,
+                            time_stamp: 40,
+                            content_hash: "qwertqwey"
+                        }
+                    )
                 )
-            )
-        ]
-    );
+            ]
+        );
     stop_cheat_block_timestamp(orbInvocationAddress);
     stop_cheat_caller_address(orbInvocationAddress);
 
@@ -400,18 +404,18 @@ fn test_flag_response() {
     start_cheat_caller_address(orbInvocationAddress, buyer1);
     orbInvocationDispatcher.flag_response(new_orb_address, 1, 1);
     spy
-    .assert_emitted(
-        @array![
-            (
-                orbInvocationAddress,
-                ORBInvocationRegistry::Event::ResponseFlagging(
-                    ORBInvocationRegistry::ResponseFlagging {
-                        orb_address: new_orb_address, invocation_id: 1, flager: buyer1
-                    }
+        .assert_emitted(
+            @array![
+                (
+                    orbInvocationAddress,
+                    ORBInvocationRegistry::Event::ResponseFlagging(
+                        ORBInvocationRegistry::ResponseFlagging {
+                            orb_address: new_orb_address, invocation_id: 1, flager: buyer1
+                        }
+                    )
                 )
-            )
-        ]
-    );
+            ]
+        );
     stop_cheat_caller_address(orbInvocationAddress);
 }
 
@@ -429,21 +433,21 @@ fn test_rate_positive_response() {
     orbInvocationDispatcher.rate_positive_reponse(new_orb_address, 1, 1);
 
     spy
-    .assert_emitted(
-        @array![
-            (
-                orbInvocationAddress,
-                ORBInvocationRegistry::Event::PositiveRating(
-                    ORBInvocationRegistry::PositiveRating {
-                        orb_address: new_orb_address,
-                        invocation_id: 1,
-                        usage_level: 001,
-                        user_satisfaction: 001,
-                    }
+        .assert_emitted(
+            @array![
+                (
+                    orbInvocationAddress,
+                    ORBInvocationRegistry::Event::PositiveRating(
+                        ORBInvocationRegistry::PositiveRating {
+                            orb_address: new_orb_address,
+                            invocation_id: 1,
+                            usage_level: 001,
+                            user_satisfaction: 001,
+                        }
+                    )
                 )
-            )
-        ]
-    );
+            ]
+        );
     stop_cheat_caller_address(orbInvocationAddress);
 }
 
@@ -459,15 +463,14 @@ fn test_rate_positive_response_panic() {
     orbInvocationDispatcher.flag_response(new_orb_address, 1, 1);
     stop_cheat_caller_address(orbInvocationAddress);
 
-  
     start_cheat_caller_address(orbInvocationAddress, buyer1);
     orbInvocationDispatcher.rate_positive_reponse(new_orb_address, 1, 1);
     stop_cheat_caller_address(orbInvocationAddress);
 }
 
 #[test]
-#[should_panic(expected:('POSITIVE_RATED',))]
-fn test_flag_response_panic(){
+#[should_panic(expected: ('POSITIVE_RATED',))]
+fn test_flag_response_panic() {
     let buyer1: ContractAddress = 01456.try_into().unwrap();
     let (new_orb_address, orbInvocationAddress) = invokeHash();
     let orbInvocationDispatcher = IOrbInvocationRegistryTraitDispatcher {
@@ -484,15 +487,14 @@ fn test_flag_response_panic(){
 }
 
 
-fn tip_invocation()->(ContractAddress, ContractAddress, ContractAddress){
+fn tip_invocation() -> (ContractAddress, ContractAddress, ContractAddress) {
     let owner: ContractAddress = 123.try_into().unwrap();
     let buyer1: ContractAddress = 01456.try_into().unwrap();
-   
 
     let tokenAddress = deploy_erc20('OrbToken', 'OTK', 18);
 
     let tokenDispatcher = IERC20Dispatcher { contract_address: tokenAddress };
-    
+
     let newKeeper: ContractAddress = 124.try_into().unwrap();
 
     let orbInvocationAddress = deploy_orbinvocation_registry(owner);
@@ -512,8 +514,9 @@ fn tip_invocation()->(ContractAddress, ContractAddress, ContractAddress){
     stop_cheat_caller_address(orb_pond_address);
 
     start_cheat_caller_address(orb_pond_address, newKeeper);
-    let uri:ByteArray =  "qwertyu";
-    let new_orb_address = orbpond_dispatcher.create_orb('vinceOrb', 'VOB', uri, 5);
+    let uri1: felt252 = 1165125987;
+    let uri2: felt252 = 1165125987;
+    let new_orb_address = orbpond_dispatcher.create_orb('vinceOrb', 'VOB', uri1, uri2, 5);
 
     stop_cheat_caller_address(orb_pond_address);
 
@@ -545,7 +548,7 @@ fn tip_invocation()->(ContractAddress, ContractAddress, ContractAddress){
     stop_cheat_block_timestamp(orbInvocationAddress);
     stop_cheat_caller_address(orbInvocationAddress);
 
-    // // RESPOND 
+    // // RESPOND
     start_cheat_caller_address(orbInvocationAddress, newKeeper);
     start_cheat_block_timestamp(orbInvocationAddress, 40);
     orbInvocationDispatcher.respond(1, "qwertqwey", new_orb_address);
@@ -555,61 +558,63 @@ fn tip_invocation()->(ContractAddress, ContractAddress, ContractAddress){
 
     // // tip Invocation
     let orbTipJarAddress = deploy_orb_invocation_tipjar(owner);
-    let tipjar_dispatcher = OrbInvocationTipJarTraitDispatcher{contract_address:orbTipJarAddress};
+    let tipjar_dispatcher = OrbInvocationTipJarTraitDispatcher {
+        contract_address: orbTipJarAddress
+    };
     let mut spy = spy_events(SpyOn::One(orbTipJarAddress));
     start_cheat_caller_address(tokenAddress, buyer1);
     tokenDispatcher.approve(orbTipJarAddress, 500);
     stop_cheat_caller_address(tokenAddress);
-  
+
     start_cheat_caller_address(orbTipJarAddress, buyer1);
     tipjar_dispatcher.tip_invocation(new_orb_address, tokenAddress, "qwerty", 100);
 
     spy
-    .assert_emitted(
-        @array![
-            (
-                orbTipJarAddress,
-                ORB_invocation_tipJar::Event::TipDeposit(
-                    ORB_invocation_tipJar::TipDeposit {
-                        orb_address: new_orb_address, invocation_hash: "qwerty", tipper: buyer1
-                    }
+        .assert_emitted(
+            @array![
+                (
+                    orbTipJarAddress,
+                    ORB_invocation_tipJar::Event::TipDeposit(
+                        ORB_invocation_tipJar::TipDeposit {
+                            orb_address: new_orb_address, invocation_hash: "qwerty", tipper: buyer1
+                        }
+                    )
                 )
-            )
-        ]
-    );
+            ]
+        );
     stop_cheat_caller_address(orbTipJarAddress);
     (orbTipJarAddress, new_orb_address, tokenAddress)
-
 }
 
 #[test]
-fn test_tip_invocation(){
+fn test_tip_invocation() {
     tip_invocation();
 }
 
 #[test]
-fn claim_tips_for_invocation(){
+fn claim_tips_for_invocation() {
     let (orbTipJarAddress, new_orb_address, tokenAddress) = tip_invocation();
-    let tipjar_dispatcher = OrbInvocationTipJarTraitDispatcher{contract_address:orbTipJarAddress};
+    let tipjar_dispatcher = OrbInvocationTipJarTraitDispatcher {
+        contract_address: orbTipJarAddress
+    };
     let newKeeper: ContractAddress = 124.try_into().unwrap();
-  
 
     start_cheat_caller_address(orbTipJarAddress, newKeeper);
     tipjar_dispatcher.claim_tips_for_invocation(new_orb_address, 1, 20, tokenAddress);
-    
+
     stop_cheat_caller_address(orbTipJarAddress);
 }
 #[test]
-fn test_withdraw_tip(){
+fn test_withdraw_tip() {
     let (orbTipJarAddress, new_orb_address, tokenAddress) = tip_invocation();
-    let tipjar_dispatcher = OrbInvocationTipJarTraitDispatcher{contract_address:orbTipJarAddress};
+    let tipjar_dispatcher = OrbInvocationTipJarTraitDispatcher {
+        contract_address: orbTipJarAddress
+    };
     let buyer1: ContractAddress = 01456.try_into().unwrap();
-  
 
     start_cheat_caller_address(orbTipJarAddress, buyer1);
 
     tipjar_dispatcher.withdraw_tip("qwerty", new_orb_address, tokenAddress);
-    
-    stop_cheat_caller_address(orbTipJarAddress);
 
+    stop_cheat_caller_address(orbTipJarAddress);
 }

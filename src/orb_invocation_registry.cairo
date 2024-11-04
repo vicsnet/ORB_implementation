@@ -78,27 +78,29 @@ pub mod ORBInvocationRegistry {
     use core::option::OptionTrait;
     use core::traits::TryInto;
     use starknet::{ContractAddress, get_caller_address, get_block_timestamp, get_contract_address};
+    use starknet::storage::Map;
     use super::{IORBDispatcher, IORBDispatcherTrait};
     #[storage]
     struct Storage {
         // this tracks the address of the orb, invocation id, to the invocation struct
 
-        invocations: LegacyMap::<(ContractAddress, u256), InvocationData>,
+        invocations: Map::<(ContractAddress, u256), InvocationData>,
         // Count of Invocation made
-        // it includes the address of the Orb and the invocation ID 
-        invocation_count: LegacyMap::<ContractAddress, u256>,
-        // Mapping for responses (answer to invocations): matching invocationId toresponsedata struct
+        // it includes the address of the Orb and the invocation ID
+        invocation_count: Map::<ContractAddress, u256>,
+        // Mapping for responses (answer to invocations): matching invocationId toresponsedata
+        // struct
 
-        responses: LegacyMap::<(ContractAddress, u256), ResponseData>,
+        responses: Map::<(ContractAddress, u256), ResponseData>,
         // Mapping of flagged (reported) responses by the holder
 
-        response_flagged: LegacyMap::<(ContractAddress, u256), bool>,
-        // response_rating 
-        response_rating: LegacyMap::<(ContractAddress, u256), bool>,
-        //  Addresses authorised o for external calls in invokeWithXAndCall 
+        response_flagged: Map::<(ContractAddress, u256), bool>,
+        // response_rating
+        response_rating: Map::<(ContractAddress, u256), bool>,
+        //  Addresses authorised o for external calls in invokeWithXAndCall
         // dont know why yet
 
-        authorized_contract: LegacyMap::<ContractAddress, bool>,
+        authorized_contract: Map::<ContractAddress, bool>,
         // Gap used to prevent storage collisions
         gap: u256,
         owner: ContractAddress,
@@ -382,8 +384,8 @@ pub mod ORBInvocationRegistry {
 
         /// @notice get the details of the invocation
         /// @param orb_address Address of the Orb
-        /// @param invocation_id_ Id of an invocation to which to check the existence of a response of
-        /// @return content_data, address of invoker
+        /// @param invocation_id_ Id of an invocation to which to check the existence of a response
+        /// of @return content_data, address of invoker
         fn get_invocations(
             self: @ContractState, orb_address: ContractAddress, invocation_id_: u256
         ) -> (ByteArray, ContractAddress) {

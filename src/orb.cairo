@@ -38,7 +38,7 @@ pub trait IERC721_token_receiver<TContractState> {
 pub trait IERC721_metadata<TContractState> {
     fn name(self: @TContractState) -> felt252;
     fn symbol(self: @TContractState) -> felt252;
-    fn token_uri(self: @TContractState) -> ByteArray;
+    fn token_uri(self: @TContractState) -> (felt252, felt252);
 }
 #[starknet::interface]
 pub trait IERC20<T> {
@@ -154,25 +154,39 @@ pub trait IOrbTrait<TContractState> {
 
     fn get_pond_address(self: @TContractState) -> ContractAddress;
 
+    fn get_oathHash(self: @TContractState) ->ByteArray;
+
+    fn get_orb_price(self:@TContractState)-> u256;
+
     fn main_keeper(self: @TContractState) -> ContractAddress;
+
+    fn get_orb_status(self: @TContractState)->bool;
+
+    fn set_purchase_period(ref self: TContractState, purchase_period_:u256);
+
+    fn get_purchase_period(self: @TContractState)->u256;
+
+    fn get_honored_until(self: @TContractState)->u256;
+
+    fn get_token_owned(self: @TContractState)->u256;
+
+    fn get_token_owners_id(self: @TContractState, owner_:ContractAddress)->u256;
 }
 #[starknet::contract]
 pub mod ORB {
     use core::option::OptionTrait;
 
     use core::starknet::event::EventEmitter;
-    use starknet::{
-        ContractAddress, get_caller_address, storage_access::StorageBaseAddress,
-        get_contract_address, get_block_timestamp, contract_address_const
-    };
+    use starknet::{ContractAddress, get_caller_address, get_contract_address, get_block_timestamp,};
     use core::num::traits::Zero;
+    use starknet::storage::Map;
     use super::{
         IERC20Dispatcher, IERC20DispatcherTrait, OrbInvocationDispatcher,
         OrbInvocationDispatcherTrait
     };
     // Max_Supply of NFT to prevent over Fractionalization
     const MAX_SUPPLY: u256 = 5;
-    // weights 
+    // weights
     //Equivalent to 0.4
     const WEIGHT_USAGE_LEVEL: u256 = 4;
     //Equivalent to 0.3
@@ -180,7 +194,7 @@ pub mod ORB {
     //Equivalent to 0.3
     const WEIGHT_USER_SATISFACTION: u256 = 3;
 
-    // Maximum cooldown duration is 10 years 
+    // Maximum cooldown duration is 10 years
     const COOLDOWN_MAXIMUM_DURATION: u256 = 3650;
 
     //storage
@@ -188,9 +202,11 @@ pub mod ORB {
     struct Storage {
         name: felt252,
         symbol: felt252,
-        token_URI: ByteArray,
+        token_URI: (felt252, felt252),
         owner: ContractAddress,
         token_id: u256,
+        // oath data
+        oath_hash: ByteArray,
         // Honored Until: time stamp until which the Orb Oath is honored for the keeper
         honored_until: u256,
         // List the Orb: Determine if ORb fraction can be purchased
@@ -206,7 +222,8 @@ pub mod ORB {
         last_token_id: u256,
         // total price of the Orb
         price: u256,
-        // max time to hold token before resubscription this should be calculated in days assuming 10 days 10 * 24 * 60 * 60
+        // max time to hold token before resubscription this should be calculated in days assuming
+        // 10 days 10 * 24 * 60 * 60
         purchase_period: u256,
         // cooldown period assuming 7 days 7 *24*60*60
         cooldown: u256,
@@ -216,26 +233,31 @@ pub mod ORB {
         clear_text_maximum_length: u256,
         // owners: LegacyMap::<u256, ContractAddress>,
         // mapping address this to the parameters
-        parameters_data: LegacyMap::<ContractAddress, Parameters>,
-        // mapping to monitor usage  
-        parameters_monitor: LegacyMap::<u256, MonitorParameters>,
+        parameters_data: Map::<ContractAddress, Parameters>,
+        // mapping to monitor usage
+        parameters_monitor: Map::<u256, MonitorParameters>,
         // fractioned balance of the token holder
-        fractioned_balances: LegacyMap::<ContractAddress, u256>,
+        fractioned_balances: Map::<ContractAddress, u256>,
         // fractioned token id
-        fractioned_token_id_owner: LegacyMap::<u256, ContractAddress>,
+        fractioned_token_id_owner: Map::<u256, ContractAddress>,
         // unit of fractioned token attached to an id
-        fractioned_token_id: LegacyMap::<u256, u256>,
+        fractioned_token_id: Map::<u256, u256>,
+
+        // owner token id
+        owner_token_id: Map::<ContractAddress, u256>,
+
+
         // token owned by individual: deposited token or rewards
-        balances: LegacyMap::<ContractAddress, u256>,
+        balances: Map::<ContractAddress, u256>,
         // Subscription time stamp: showing current period of subscrition.
         // mapping of tokenId to block.timestamp
-        subscription_time: LegacyMap::<u256, u256>,
-        // Monitor last invocation time 
-        last_invocation: LegacyMap::<u256, u256>,
+        subscription_time: Map::<u256, u256>,
+        // Monitor last invocation time
+        last_invocation: Map::<u256, u256>,
         //Address of the `OrbPond` that deployed this Orb
         pond: ContractAddress,
-        token_approvals: LegacyMap::<u256, ContractAddress>,
-        operator_approvals: LegacyMap::<(ContractAddress, ContractAddress), bool>,
+        token_approvals: Map::<u256, ContractAddress>,
+        operator_approvals: Map::<(ContractAddress, ContractAddress), bool>,
     }
     // saved parameters to determine premium price
     #[derive(Drop, Serde, starknet::Store)]
@@ -244,7 +266,7 @@ pub mod ORB {
         user_satisfaction: u256,
         subscription_demand: u256,
     }
-    // Struct to monitor usae of the fractioned Orb 
+    // Struct to monitor usae of the fractioned Orb
     #[derive(Drop, Serde, starknet::Store)]
     struct MonitorParameters {
         usage_level: u256,
@@ -384,15 +406,18 @@ pub mod ORB {
         name_: felt252,
         symbol_: felt252,
         total_supply_: u256,
-        token_uri_: ByteArray,
+        token_uri_1: felt252,
+        token_uri_2: felt252,
         owner_: ContractAddress
     ) {
         assert(total_supply_ <= MAX_SUPPLY, 'SUPPLY_EXCEED_MAX');
         assert(total_supply_ >= 1, 'INCREASE_SUPPLY');
+        let address_this = get_contract_address();
         self.name.write(name_);
         self.symbol.write(symbol_);
         self.total_supply.write(total_supply_);
-        self.token_URI.write(token_uri_);
+        self.token_URI.write((token_uri_1, token_uri_2));
+        self.fractioned_balances.write(address_this, total_supply_ );
         self.owner.write(owner_);
         self.pond.write(get_caller_address());
     }
@@ -408,15 +433,15 @@ pub mod ORB {
             self.symbol.read()
         }
         /// @dev returns tokenURI JSONs
-        fn token_uri(self: @ContractState) -> ByteArray {
+        fn token_uri(self: @ContractState) -> (felt252, felt252) {
             self.token_URI.read()
         }
     }
 
     #[abi(embed_v0)]
     impl ERC721 of super::IERC_721<ContractState> {
-        /// @notice this function Returns 0 for non main keeper address i.e the address  that deployed the contract
-        /// @param owner_ Address to check owner for
+        /// @notice this function Returns 0 for non main keeper address i.e the address  that
+        /// deployed the contract @param owner_ Address to check owner for
         fn balance_of(self: @ContractState, owner_: ContractAddress) -> u256 {
             if (owner_ != self.owner.read()) {
                 0
@@ -475,7 +500,7 @@ pub mod ORB {
     #[abi(embed_v0)]
     impl OrbTrait of super::IOrbTrait<ContractState> {
         /// @notice get the total fractioned supply
-        /// @return Returns total supply of the Fractioned Orb 
+        /// @return Returns total supply of the Fractioned Orb
         fn get_total_supply(self: @ContractState) -> u256 {
             self.total_supply.read()
         }
@@ -491,6 +516,7 @@ pub mod ORB {
             let caller = get_caller_address();
             self.only_owner(caller);
             self.set_price_(price_);
+           
         }
         /// @notice activate the Orb
         fn start_orb(ref self: ContractState) {
@@ -505,11 +531,12 @@ pub mod ORB {
             self.orb_status.write(true);
         }
 
-        /// @notice Allows Swearing of the Orb Oath and set a new `honored` date. function can only be called by the Orb creator
-        /// @dev Emit `Oath Swearing`
+        /// @notice Allows Swearing of the Orb Oath and set a new `honored` date. function can only
+        /// be called by the Orb creator @dev Emit `Oath Swearing`
         /// @param oath_hash Hash
-        /// @param new_honored_until Date untill which the Orb creator will honor the Oath of the fractioned Orb keeper
-        /// @param new_response_period Duration within which the Orb creator promises to respond to invocation
+        /// @param new_honored_until Date untill which the Orb creator will honor the Oath of the
+        /// fractioned Orb keeper @param new_response_period Duration within which the Orb creator
+        /// promises to respond to invocation
         fn swear_oath(
             ref self: ContractState,
             oath_hash: ByteArray,
@@ -521,9 +548,11 @@ pub mod ORB {
             assert(is_owner == true, 'NOT_ORB_CREATOR');
             assert(self.honored_until.read() == 0, 'HONORED_DATE_DISAPPROVED');
             assert(new_response_period > 0, 'INCREASE_RESPONSE_PERIOD');
+            self.oath_hash.write(oath_hash.clone());
             self.honored_until.write(new_honored_until);
             self.response_period.write(new_response_period);
-            // emmit oat_hash as event 
+
+            // emmit oat_hash as event
             self
                 .emit(
                     OathSwearing {
@@ -536,8 +565,8 @@ pub mod ORB {
 
         /// @notice Allows the Orb creator to extend the honoredUntil date
         /// @dev Emits `HonoredUntilUpdate`
-        /// @param new_honored_until Date until which the Orb creator will honor the Oath for the Orb keeper. must be greater than the current
-
+        /// @param new_honored_until Date until which the Orb creator will honor the Oath for the
+        /// Orb keeper. must be greater than the current
         fn extend_honored_until(ref self: ContractState, new_honored_until: u256) {
             let caller = get_caller_address();
             let is_owner = self.only_owner(caller);
@@ -557,7 +586,8 @@ pub mod ORB {
         }
         /// @notice Allows the Orb creator to set the new cooldown duration period
         /// @dev Emits `CooldownUpdate`
-        /// @param new_cooldown New cooldown in seconds. cannot be longer than `COOLDOWN_MAXIMUM_DURATION`
+        /// @param new_cooldown New cooldown in seconds. cannot be longer than
+        /// `COOLDOWN_MAXIMUM_DURATION`
         /// @param new_flagging_period New flagging period in seconds
         fn set_cool_down(ref self: ContractState, new_cooldown: u256, new_flagging_period: u256) {
             let caller = get_caller_address();
@@ -597,6 +627,15 @@ pub mod ORB {
                 );
         }
 
+        /// @notice Allow Orb creator to set the purchase_period
+        /// @param purchase_period_ should be renewal time in days assuming 7 days 7 * 24 * 60 * 60
+        fn set_purchase_period(ref self: ContractState, purchase_period_:u256){
+            let caller = get_caller_address();
+            assert(self.owner.read() == caller, 'NOT_PERMITTED');
+            self.purchase_period.write(purchase_period_);
+        }
+
+       
         /// @notice buy a Fractioned part of the Orb
         /// @dev Emits 'BuyOrb'
         /// @param buyer_address address of the buyer
@@ -613,13 +652,14 @@ pub mod ORB {
             let orb_price = self.get_price();
             assert(orb_price > 0, 'PRICE_NOT_DETERMINED');
             assert(self.token_owned.read() <= self.total_supply.read(), 'NO_AVAILABLE_TOKEN');
-            assert(
-                fractioned_unit_ + self.token_owned.read() <= self.total_supply.read(),
-                'OVER_TOKEN_PURCHASED'
-            );
-            // assert(fractioned_unit_ <= token_owned, "OVER_TOKEN_PURCHASED");
-            // let caller = get_caller_address();
+            // assert(
+            //      fractioned_unit_ + self.token_owned.read() <= self.total_supply.read() ,
+            //     'OVER_TOKEN_PURCHASED'
+            // );
+            assert(fractioned_unit_ == 1, 'ONLY_ONE_TO_BE_AVAILABLE');
             let address_this = get_contract_address();
+            assert( self.fractioned_balances.read(address_this) > 0, 'OVER_TOKEN_PURCHASED');
+            // let caller = get_caller_address();
             let usage_level_ = self.parameters_data.read(address_this).usage_level;
             let user_satisfaction_ = self.parameters_data.read(address_this).user_satisfaction;
             let subscription_demand_ = self.parameters_data.read(address_this).subscription_demand;
@@ -635,8 +675,11 @@ pub mod ORB {
             assert(balance_ >= fractioned_price_, 'INSUFFICIENT_BALANCE');
             IERC20Dispatcher { contract_address: token_address_ }
                 .transfer_from(buyer_address, address_this, amount_);
+            let contract_fraction = self.fractioned_balances.read(address_this) - fractioned_unit_;
 
+            self.fractioned_balances.write(address_this, contract_fraction);
             self.fractioned_balances.write(buyer_address, fractioned_unit_);
+
 
             // let remaining_token_ =  fractioned_unit_ - self.token_owned.read();
             let new_id = self.last_token_id.read() + 1;
@@ -649,6 +692,7 @@ pub mod ORB {
 
             self.fractioned_token_id_owner.write(new_id, buyer_address);
             self.fractioned_token_id.write(new_id, fractioned_unit_);
+            self.owner_token_id.write(buyer_address, new_id);
             self.subscription_time.write(new_id, extended_time);
             // increase subsrition demand
             let usage_level = self.parameters_data.read(get_contract_address()).usage_level + 0;
@@ -726,7 +770,8 @@ pub mod ORB {
             let uint_owed = self.fractioned_balances.read(formal_owner);
             self.subscription_time.write(token_id_, extended_time);
             self.fractioned_balances.write(formal_owner, 0);
-
+            self.owner_token_id.write(formal_owner, 0);
+            self.owner_token_id.write(caller, token_id_);
             self.fractioned_balances.write(caller, uint_owed);
             let usage_level = 0;
             let user_satisfaction = 0;
@@ -807,7 +852,7 @@ pub mod ORB {
         fn relinquish(ref self: ContractState, token_id_: u256,) {
             let caller = get_caller_address();
             let address_this = get_contract_address();
-            // let set_time 
+            // let set_time
             let current_time: u256 = get_block_timestamp().try_into().unwrap();
             assert(self.fractioned_token_id_owner.read(token_id_) == caller, 'NOT_OWNER');
             assert(current_time > self.subscription_time.read(token_id_), 'ORB_NOT_ACTIVE');
@@ -828,15 +873,15 @@ pub mod ORB {
         }
 
         /// @notice get ths subscription time left of the token_id_ in seconds
-        /// @param token_id_ fractioned unit id of the 
-        /// @return token_id time left in seconds 
+        /// @param token_id_ fractioned unit id of the
+        /// @return token_id time left in seconds
         fn get_subscription_remaining_time(self: @ContractState, token_id_: u256) -> u256 {
             self.subscription_time.read(token_id_)
         }
 
         /// @notice  get last invocation time in seconds
-        /// @param token_id_ fractioned unit id of the 
-        /// @return token_id time of last invocation in seconds 
+        /// @param token_id_ fractioned unit id of the
+        /// @return token_id time of last invocation in seconds
         fn my_last_invocation_time(self: @ContractState, token_id_: u256) -> u256 {
             self.last_invocation.read(token_id_)
         }
@@ -899,7 +944,7 @@ pub mod ORB {
         }
 
         ///@notice get premium data by user
-        /// 
+        ///
         fn get_premium_data_by_user(self: @ContractState, token_id_: u256) -> (u256, u256) {
             (
                 self.parameters_monitor.read(token_id_).usage_level,
@@ -937,9 +982,9 @@ pub mod ORB {
         }
 
 
-        /// @notice foreclose can be called by anyone on a particular fractioned token_id if the holder refused to renew its subscription 
-        /// @dev Emits 'ForeClosure'
-        /// @param token-id_ Fractioned Orb id 
+        /// @notice foreclose can be called by anyone on a particular fractioned token_id if the
+        /// holder refused to renew its subscription @dev Emits 'ForeClosure'
+        /// @param token-id_ Fractioned Orb id
         fn foreclose(ref self: ContractState, token_id_: u256) {
             let address_this = get_contract_address();
             let current_time: u256 = get_block_timestamp().try_into().unwrap();
@@ -955,12 +1000,12 @@ pub mod ORB {
         }
         /// @notice check address if owner
         /// @param owner_ address to check status on
-        /// @returns the status oof the address 
+        /// @returns the status oof the address
         fn get_owner(self: @ContractState, owner_: ContractAddress) -> bool {
             self.only_owner(owner_)
         }
 
-        /// @notice get flagging period for Invocation 
+        /// @notice get flagging period for Invocation
         fn get_flagging_period(self: @ContractState) -> u256 {
             self.flagging_period.read()
         }
@@ -969,15 +1014,54 @@ pub mod ORB {
         fn get_pond_address(self: @ContractState) -> ContractAddress {
             self.pond.read()
         }
-        /// @notice return main owner Address 
+
+        /// @notice return Oath Hash of the adddress
+        fn get_oathHash(self: @ContractState) ->ByteArray{
+            self.oath_hash.read()
+        }
+
+        /// @notice return fractioned orb price
+        fn get_orb_price(self:@ContractState)-> u256{
+            let address_this = get_contract_address();
+            let usage_level_ = self.parameters_data.read(address_this).usage_level;
+            let user_satisfaction_ = self.parameters_data.read(address_this).user_satisfaction;
+            let subscription_demand_ = self.parameters_data.read(address_this).subscription_demand;
+            
+            self.my_fractioned_orb_price(usage_level_,user_satisfaction_,subscription_demand_ )
+        }
+        
+        /// @notice return main owner Address
         fn main_keeper(self: @ContractState) -> ContractAddress {
             self.owner.read()
         }
-    }
+        /// @notice return orb status
+        fn get_orb_status(self: @ContractState)->bool{
+            self.orb_status.read() 
+        }
+        /// @notice returns Purchase period
+        /// @dev purchase_period_ should be  assumed in this format 7 days 7 * 24 * 60 * 60
+        fn get_purchase_period(self: @ContractState)->u256{
+
+            self.purchase_period.read()
+        }
+        /// @notice return honored_until_date
+        fn get_honored_until(self: @ContractState)->u256{
+            self.honored_until.read()
+        }
+        /// @notice return token owned
+        fn get_token_owned(self: @ContractState)->u256{
+            self.token_owned.read()
+        }
+
+        /// @notice return token owners id
+        fn get_token_owners_id(self: @ContractState, owner_:ContractAddress)->u256{
+            self.owner_token_id.read(owner_)
+        }
+}
 
     #[generate_trait]
     impl Private of PrivateTrait {
-        /// @notice return owner 
+        /// @notice return owner
         fn only_owner(self: @ContractState, owner_: ContractAddress) -> bool {
             if (owner_ != self.owner.read()) {
                 false
@@ -993,12 +1077,12 @@ pub mod ORB {
             self.price.write(price_);
         }
 
-        // @notice get the set price
+        /// @notice get the set price
         fn get_price(self: @ContractState) -> u256 {
             self.price.read()
         }
 
-        // @notice Orb single Price
+        /// @notice Orb single Price
         fn my_fractioned_orb_price(
             self: @ContractState,
             usage_level_: u256,
@@ -1013,7 +1097,7 @@ pub mod ORB {
             let fractioned_price = premium_price / self.total_supply.read();
             fractioned_price
         }
-        // @notice determine premium price
+        /// @notice determine premium price
         fn calculate_premium(
             self: @ContractState,
             price_: u256,

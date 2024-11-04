@@ -30,7 +30,8 @@ fn deploy_contract(
     token_uri_.serialize(ref calldata);
     owner_.serialize(ref calldata);
 
-    // Precalculate the address to obtain the contract address before the constructor call (deploy) itself
+    // Precalculate the address to obtain the contract address before the constructor call (deploy)
+    // itself
     let contract_address = contract.precalculate_address(@calldata);
     start_cheat_caller_address(contract_address, owner_.try_into().unwrap());
 
@@ -199,7 +200,7 @@ fn test_extend_honored_until() {
             ]
         );
     stop_cheat_caller_address(contract_address);
-// cheat_block_timestamp(contract_address)
+    // cheat_block_timestamp(contract_address)
 }
 #[test]
 fn test_cooldown() {

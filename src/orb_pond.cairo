@@ -5,17 +5,19 @@ pub trait IOrbPondTrait<TContractState> {
         ref self: TContractState,
         name_: felt252,
         symbol_: felt252,
-        token_uri_: ByteArray,
+        token_uri_1: felt252,
+        token_uri_2: felt252,
         total_supply_: u256,
     ) -> ContractAddress;
 
+
     fn register_version(ref self: TContractState, version_: u256, orb_class_hash_: ClassHash);
 
+    fn get_all_orb_addresses(self: @TContractState) -> Array<ContractAddress>;
     fn version(self: @TContractState) -> u256;
     fn set_orb_initial_version(ref self: TContractState, orb_initial_version_: u256);
     fn get_registry(self: @TContractState) -> ContractAddress;
     fn get_owner(self: @TContractState) -> ContractAddress;
-    
 }
 
 
@@ -23,27 +25,32 @@ pub trait IOrbPondTrait<TContractState> {
 pub mod ORB_pond {
     use core::num::traits::Zero;
     use core::starknet::event::EventEmitter;
-    use starknet::{
-        ContractAddress, ClassHash, SyscallResultTrait, syscalls::deploy_syscall, get_caller_address
-    };
+
+    use starknet::{ContractAddress, ClassHash, syscalls::deploy_syscall, get_caller_address,};
+    use starknet::storage::{Vec, VecTrait, MutableVecTrait, Map};
+
 
     // Orb pond version
     const VERSION: u256 = 1;
+
     #[storage]
     struct Storage {
         ORBHash: ClassHash,
         // deployer_ address
         owner: ContractAddress,
         // the mapping of Orb ids to Orbs.
-        orbs: LegacyMap::<u256, ContractAddress>,
+        orbs: Map::<u256, ContractAddress>,
         /// The number of Orb  created so far
         orb_count: u256,
-        /// The address of the Orb Invocation Registry, used to register Orb invocations and responses
+        /// The address of the Orb Invocation Registry, used to register Orb invocations and
+        /// responses
         registry: ContractAddress,
         /// The highest version number so far. Could be used for new Orb Creation
         latest_version: u256,
         /// New Orb version
         orb_initial_version: u256,
+        /// array of all deployed Orbs
+        all_orbs: Vec<ContractAddress>
     }
 
 
@@ -72,40 +79,43 @@ pub mod ORB_pond {
         pub previous_version: u256,
         pub orb_initial_version: u256
     }
-    /// @notice Contract Initalizes, setting owner and registry 
+    /// @notice Contract Initalizes, setting owner and registry
     /// @param registry_ The adddress of the Orb Invocation Registry
     #[constructor]
-    fn constructor(ref self: ContractState, registry_: ContractAddress, owner_:ContractAddress) {
-        // let owner_address = get_caller_address();  
+    fn constructor(ref self: ContractState, registry_: ContractAddress, owner_: ContractAddress) {
+        // let owner_address = get_caller_address();
         // assert(owner_ == owner_address, 'ADDRESS_DOES_NOT_MATCH');
-        self.owner.write( owner_);
+        self.owner.write(owner_);
         self.registry.write(registry_)
     }
-    
+
     #[abi(embed_v0)]
     impl OrbPond of super::IOrbPondTrait<ContractState> {
         /// @notice create a new Orb
-        /// @dev Emits 'OrbCreated' 
+        /// @dev Emits 'OrbCreated'
         /// @param name_ Name of the Orb used for display Purposs
         /// @param symbol_ Symbol of the Orb, used for display Purpose
         /// @param token_uri_ Initial token_uri_ of the Orb, used as part of ERC721
-        /// @param total_supply_ Fractionalized total of the OrbCreated   
+        /// @param total_supply_ Fractionalized total of the OrbCreated
         fn create_orb(
             ref self: ContractState,
             name_: felt252,
             symbol_: felt252,
-            token_uri_: ByteArray,
+            token_uri_1: felt252,
+            token_uri_2: felt252,
             total_supply_: u256,
         ) -> ContractAddress {
             assert(!self.ORBHash.read().is_zero(), 'SET_ORBHASH');
+            // let (token_uri0, token_uri1, ) = token_uri_;
+
             let mut constructor_calldata = ArrayTrait::new();
 
             name_.serialize(ref constructor_calldata);
             symbol_.serialize(ref constructor_calldata);
             total_supply_.serialize(ref constructor_calldata);
-            token_uri_.serialize(ref constructor_calldata);
+            token_uri_1.serialize(ref constructor_calldata);
+            token_uri_2.serialize(ref constructor_calldata);
             get_caller_address().serialize(ref constructor_calldata);
-
 
             let (deployed_address, _) = deploy_syscall(
                 self.ORBHash.read(), 0, constructor_calldata.span(), false
@@ -114,12 +124,12 @@ pub mod ORB_pond {
 
             self.orbs.write(self.orb_count.read(), deployed_address);
             self.orb_count.write(self.orb_count.read() + 1);
+            self.all_orbs.append().write(deployed_address);
             self.emit(OrbCreated { contract_address: deployed_address });
 
             deployed_address
         }
 
-       
         /// @notice Register a new version of the Orb Implementation Contract
         /// @dev Emits 'VersionRegistration'
         /// @param  version_ Version number of the new implementation contract
@@ -137,12 +147,13 @@ pub mod ORB_pond {
             VERSION
         }
 
-        /// @notice Sets the registered Orb Implementation version and class hash to be used for the Orb
-        /// @dev Emits 'OrbInitialVersionUpdate'
-        /// @param orb_initial_version_ Registered Orb implementation version number to be used for new Orbs
+        /// @notice Sets the registered Orb Implementation version and class hash to be used for the
+        /// Orb @dev Emits 'OrbInitialVersionUpdate'
+        /// @param orb_initial_version_ Registered Orb implementation version number to be used for
+        /// new Orbs
         fn set_orb_initial_version(ref self: ContractState, orb_initial_version_: u256) {
             assert(self.owner.read() == get_caller_address(), 'NOT_OWNER');
-            assert(orb_initial_version_ < self.latest_version.read(), 'INVALID_VERSION');
+            assert(orb_initial_version_ == self.latest_version.read(), 'INVALID_VERSION');
             let previous_version_ = self.orb_initial_version.read();
             self.orb_initial_version.write(previous_version_);
             self
@@ -154,17 +165,23 @@ pub mod ORB_pond {
                 );
         }
 
+        /// @notice Returns all created Orb addresses
+        fn get_all_orb_addresses(self: @ContractState) -> Array<ContractAddress> {
+            let mut addresses = array![];
+            for i in 0..self.all_orbs.len() {
+                addresses.append(self.all_orbs.at(i).read());
+            };
+            addresses
+        }
+
         /// @notice  Returns registry address
         fn get_registry(self: @ContractState) -> ContractAddress {
             self.registry.read()
         }
 
         /// @notice Returns Contract owner address
-        fn get_owner(self: @ContractState) -> ContractAddress{
+        fn get_owner(self: @ContractState) -> ContractAddress {
             self.owner.read()
         }
-
     }
-
-  
 }

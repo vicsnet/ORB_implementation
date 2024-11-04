@@ -17,13 +17,15 @@ pub trait IERC20<TContractState> {
 
 #[starknet::contract]
 pub mod erc20 {
-    use super::IERC20;
+    // use super::IERC20;
     use starknet::get_caller_address;
-    use core::num::traits::Zero;
-    use starknet::{ContractAddress, get_contract_address};
-    use starknet::contract_address_const;
+    // use core::num::traits::Zero;
+    use starknet::{ContractAddress};
+    // use starknet::contract_address_const;
     // use integer::BoundedU256;
+    #[feature("deprecated-bounded-int-trait")]
     use core::integer::BoundedInt;
+    use starknet::storage::Map;
 
     #[storage]
     struct Storage {
@@ -31,8 +33,8 @@ pub mod erc20 {
         _symbol: felt252,
         _decimals: u8,
         _total_supply: u256,
-        _balances: LegacyMap::<ContractAddress, u256>,
-        _allowances: LegacyMap::<(ContractAddress, ContractAddress), u256>,
+        _balances: Map::<ContractAddress, u256>,
+        _allowances: Map::<(ContractAddress, ContractAddress), u256>,
     }
 
     #[event]

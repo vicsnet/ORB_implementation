@@ -68,16 +68,16 @@ pub trait OrbInvocationTipJarTrait<TContractState> {
         ref self: TContractState, orb_address: ContractAddress, minimum_tip_value: u256
     );
 
-    fn set_platform_fee(ref self:TContractState, fee:u256);
+    fn set_platform_fee(ref self: TContractState, fee: u256);
 }
 #[starknet::contract]
 pub mod ORB_invocation_tipJar {
     use core::starknet::event::EventEmitter;
     use core::clone::Clone;
-    use core::box::BoxTrait;
+    // use core::box::BoxTrait;
     use core::array::ArrayTrait;
-    use core::option::OptionTrait;
-    use core::traits::TryInto;
+    // use core::option::OptionTrait;
+    // use core::traits::TryInto;
     use starknet::{ContractAddress, get_caller_address, get_contract_address};
     use core::num::traits::Zero;
     use core::hash::{HashStateTrait, HashStateExTrait};
@@ -87,27 +87,30 @@ pub mod ORB_invocation_tipJar {
         ORBDispatcher, ORBDispatcherTrait, OrbInvocationRegistryDispatcher,
         OrbInvocationRegistryDispatcherTrait
     };
+    use starknet::storage::Map;
+
     const FEE_DENOMINATOR: u256 = 100;
     #[storage]
     struct Storage {
         // the minimum tip value for a given Orb
-        minimum_tips: LegacyMap::<ContractAddress, u256>,
+        minimum_tips: Map::<ContractAddress, u256>,
         // Whether a certain invocation's tips have been claimed: invocationId starts from 1
         // felt252 is the hash of invocationhash and orb address
-        claimed_invocations: LegacyMap::<felt252, u256>,
+        claimed_invocations: Map::<felt252, u256>,
         // the sum of all tips for a given invocation
         // felt252 is the hash of orb_address and ByteArray
-        total_tips: LegacyMap::<felt252, u256>,
+        total_tips: Map::<felt252, u256>,
         // The sum of all tips for a given invocation by a given tipper
-        // contract address is the address of the Orb, felt252 is the hash of the tipper address and byteArray of the invocation hash, u256 is the tipped amount.
-        tipper_tips: LegacyMap::<(ContractAddress, felt252), u256>,
+        // contract address is the address of the Orb, felt252 is the hash of the tipper address and
+        // byteArray of the invocation hash, u256 is the tipped amount.
+        tipper_tips: Map::<(ContractAddress, felt252), u256>,
         // Fund allocated for the Orb Land platform, `withdrawable to platformAddress`
         platform_funds: u256,
         // Orb Land Revenue fee numerator
         platform_fee: u256,
         // Orbland Revenue Address
         platform_address: ContractAddress,
-        owner:ContractAddress,
+        owner: ContractAddress,
     }
 
     #[derive(Drop, Hash)]
@@ -148,12 +151,12 @@ pub mod ORB_invocation_tipJar {
         pub minimum_tip: u256
     }
     #[constructor]
-    fn constructor(ref self: ContractState, owner_:ContractAddress) {
+    fn constructor(ref self: ContractState, owner_: ContractAddress) {
         self.owner.write(owner_);
     }
     #[abi(embed_v0)]
     impl OrbInvocationTipJar of super::OrbInvocationTipJarTrait<ContractState> {
-        /// @notice  Tips a specific invocation content hash on an Orb 
+        /// @notice  Tips a specific invocation content hash on an Orb
         /// @dev Emits 'TipDeposit'
         /// @param orb_address The address of the Orb
         /// @param invocation_hash_ The invocation content hash
@@ -168,10 +171,10 @@ pub mod ORB_invocation_tipJar {
             let address_this = get_contract_address();
             let minimum_tip_ = self.minimum_tips.read(orb_address);
             assert(tip_amount >= minimum_tip_, 'INSUFFICIENT_TIP');
-           
+
             let hash_ = invocation_hash_.clone();
             let my_hash_data_ = hash_.clone();
-           
+
             let hash_data_ = self.hash_(orb_address, hash_);
             assert(self.claimed_invocations.read(hash_data_) <= 0, 'INVOCATION_CLAIMED');
             let tipper_hash_ = self.hash_(caller, invocation_hash_);
@@ -244,8 +247,8 @@ pub mod ORB_invocation_tipJar {
 
         /// @notice Withdraws all tips from a given list of Orbs and invocations.
         /// @param orb_address Address of the Orb
-        /// @param invocation_hash Hash of the Content 
-        /// @param token_address Address of the accepted token 
+        /// @param invocation_hash Hash of the Content
+        /// @param token_address Address of the accepted token
         fn withdraw_tip(
             ref self: ContractState,
             invocation_hash: ByteArray,
@@ -257,8 +260,8 @@ pub mod ORB_invocation_tipJar {
 
         /// @notice Withdraws all tips from a given list of Orbs and invocations.
         /// @param orb_address Array Address of the Orb
-        /// @param invocation_hash Array Hash of the Content 
-        /// @param token_address Address of the accepted token 
+        /// @param invocation_hash Array Hash of the Content
+        /// @param token_address Address of the accepted token
         fn withdraw_tips(
             ref self: ContractState,
             orbs_address: Array<ContractAddress>,
@@ -267,22 +270,18 @@ pub mod ORB_invocation_tipJar {
         ) {
             assert(orbs_address.len() == content_hashes_.len(), 'UNEVEN_ARRAY');
             let mut i = 0;
-            while i < orbs_address
-                .len() {
-                    let orb_address = orbs_address.at(i); // Safe to unwrap as we are within bounds
-                    let content_hash_boxed = content_hashes_
-                        .at(i)
-                        .clone(); // Safe to unwrap as we are within bounds
+            while i < orbs_address.len() {
+                let orb_address = orbs_address.at(i); // Safe to unwrap as we are within bounds
+                let content_hash_boxed = content_hashes_
+                    .at(i)
+                    .clone(); // Safe to unwrap as we are within bounds
 
-                    let content_hash = content_hash_boxed;
+                let content_hash = content_hash_boxed;
 
-                    self
-                        .withdraw_tip_(
-                            content_hash, get_caller_address(), *orb_address, token_address
-                        );
+                self.withdraw_tip_(content_hash, get_caller_address(), *orb_address, token_address);
 
-                    i = i + 1;
-                };
+                i = i + 1;
+            };
         }
         /// @notice  Withdraws all funds set aside as the platform fee. Can be called by anyone.
         fn withdraw_platform_funds(ref self: ContractState, token_address: ContractAddress) {
@@ -312,17 +311,16 @@ pub mod ORB_invocation_tipJar {
                     }
                 );
         }
-        
-        /// @notice set Platform Fee 
+
+        /// @notice set Platform Fee
         /// @param fee charge on tips
-        
-        fn set_platform_fee(ref self:ContractState, fee:u256){
+
+        fn set_platform_fee(ref self: ContractState, fee: u256) {
             let caller = get_caller_address();
             assert(caller == self.owner.read(), 'NOT_OWNER');
             self.platform_fee.write(fee);
         }
     }
-    
 
 
     #[generate_trait]
@@ -330,8 +328,8 @@ pub mod ORB_invocation_tipJar {
         /// @notice Withdraws all tips from a given list of Orbs and invocations.
         /// @param orb_address Address of the Orb
         /// @param caller_address Address of the caller
-        /// @param invocation_hash Hash of the Content 
-        /// @param token_address Address of the accepted token 
+        /// @param invocation_hash Hash of the Content
+        /// @param token_address Address of the accepted token
         fn withdraw_tip_(
             ref self: ContractState,
             content_hash: ByteArray,
@@ -352,22 +350,22 @@ pub mod ORB_invocation_tipJar {
         }
 
         /// @notice convert ByteArray to felt252 .
-        fn byte_array_to_felt252(ref self: ContractState, byte_array: ByteArray) -> Option<felt252> {
-
+        fn byte_array_to_felt252(
+            ref self: ContractState, byte_array: ByteArray
+        ) -> Option<felt252> {
             let mut constructor_calldata = ArrayTrait::new();
 
             byte_array.serialize(ref constructor_calldata);
 
             let felt_element = *constructor_calldata.at(0);
-            if (!felt_element.is_zero() ){
+            if (!felt_element.is_zero()) {
                 Option::None
-            }else{
+            } else {
                 Option::Some(*constructor_calldata.at(1))
             }
-
         }
 
-        fn option_to_felt252(ref self:ContractState, byte_array:ByteArray) -> felt252 {
+        fn option_to_felt252(ref self: ContractState, byte_array: ByteArray) -> felt252 {
             let option_value = self.byte_array_to_felt252(byte_array);
             match option_value {
                 Option::Some(value) => value,
@@ -379,7 +377,7 @@ pub mod ORB_invocation_tipJar {
             ref self: ContractState, orb_address: ContractAddress, invocation_hash: ByteArray
         ) -> felt252 {
             let hashed_data = self.option_to_felt252(invocation_hash);
-         
+
             let my_hashed_data = HashData { orb_address, invocation_hash: hashed_data };
 
             let poseidon_hash = PoseidonTrait::new().update_with(my_hashed_data).finalize();
