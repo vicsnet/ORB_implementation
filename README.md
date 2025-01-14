@@ -1,7 +1,7 @@
 <!-- ## Orb class_hash: 0x154d442fe50adc5de14c423925608e7f59f779ab1f2cfe8b2233a0270eb79c5 -->
 <!-- ### Orb Contract Address: 0x3eb1d64149a6ba1817cb0ffe178df6afb6699ca3d4911342229a9962fc105c8 -->
 
-## Orb class_hash: 0x034224aead72753eadcf41664a3c1091ff74d47a6f3af0bbc5a85f39e3d8ecf9
+## Orb class_hash: 0x053b0928c4f5afa7da6cbdc0c14492b5bc0c96864025e390fad52499e157e82e
 
 
 ## Orb Invocation Registry class hash: 0x03dccb103a18b3a8bc580e510d9315c247fb80b94effe5db37ace2090786054a
